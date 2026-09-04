@@ -11,7 +11,7 @@ import com.myharness.codex.security.UserContext;
 import com.myharness.codex.service.ConversationService;
 import org.springframework.web.bind.annotation.*;
 
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 import java.util.List;
 import com.myharness.codex.entity.vo.MessageStateVO;
 

@@ -61,7 +61,7 @@ class ConversationMessageStreamRedisTest {
     }
     @BeforeEach void setup() {
         // This connection exclusively belongs to the process launched above.
-        try(org.springframework.data.redis.connection.RedisConnection connection=factory.getConnection()){connection.flushDb();}
+        try(org.springframework.data.redis.connection.RedisConnection connection=factory.getConnection()){connection.serverCommands().flushDb();}
         mapper=mock(ConversationMapper.class);
         ConversationPO conversation=new ConversationPO();conversation.setId(5L);conversation.setDeviceId(3L);conversation.setUserId(9L);
         turn=new ConversationTurnPO();turn.setId(7L);turn.setConversationId(5L);turn.setStatus("RUNNING");

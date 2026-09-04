@@ -1,7 +1,7 @@
 package com.myharness.codex.entity.dto;
 
-import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.Pattern;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 
 public class SkillVersionStatusDTO {
     @NotBlank(message = "版本状态不能为空")

@@ -1,6 +1,6 @@
 package com.myharness.codex.entity.dto;
 
-import javax.validation.constraints.Size;
+import jakarta.validation.constraints.Size;
 
 public class CreateConversationDTO {
     @Size(max=255) private String title;

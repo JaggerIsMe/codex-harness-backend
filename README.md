@@ -4,7 +4,11 @@ My Harness For Codex 的中台后端。已提供登录鉴权、设备注册、�
 
 ## 本地启动
 
-运行环境：Java 8、Maven、MySQL 5.7.19 或 MySQL 8。
+运行环境：Java 21、Maven 3.6.3+、MySQL 8、Redis。当前本机环境为 MySQL 8.0.23、Redis 8.10.1。
+
+技术基线：Spring Boot 3.5.16、MyBatis Starter 3.0.5（MyBatis 3.5.19 / MyBatis-Spring 3.0.5）。MySQL Connector/J、Spring Data Redis 和 Lettuce 由 Spring Boot 管理版本。POM 强制构建 JDK 为 21，主代码与测试均生成 Java 21 字节码，不能再使用 Java 8 启动。
+
+Redis 使用 `spring.data.redis.*` 配置；外部配置中的旧 `spring.redis.*` 需同步迁移，环境变量对应 `SPRING_DATA_REDIS_HOST`、`SPRING_DATA_REDIS_PORT`、`SPRING_DATA_REDIS_PASSWORD`。本次升级不修改数据库结构、业务协议或启用虚拟线程。
 
 1. 使用 `src/main/resources/db/schema.sql` 初始化 `newharness` 数据库（可交付副本：`../../docs/newharness.sql`）。全新数据库只执行完整初始化脚本，无需再执行历史迁移脚本。脚本不复制旧 `harness` 库的数据或管理员账号。
    已使用旧版 `schema.sql` 初始化过的数据库，先按需执行 `migration-agent-v1.sql`、`migration-dynamic-workspace.sql`，最后执行一次 `migration-project-isolation.sql`。
@@ -64,6 +68,15 @@ mvn spring-boot:run
 ## 验证
 
 ```powershell
-mvn test
-mvn -DskipTests package
+java -version
+mvn -version
+mvn clean verify
+# 启动独立临时 Redis，不连接或清空业务 Redis
+mvn '-Dredis.integration=true' test
+# 只读连接配置中的 MySQL，执行 SELECT；不启动业务服务或执行初始化 SQL
+mvn '-Dmysql.integration=true' '-Dtest=MysqlCompatibilityTest' test
 ```
+
+测试 JVM 已显式加载 Mockito agent，并把临时目录放在模块 `target` 下。IDE 的 Project SDK、Maven Runner 与部署服务均需选用 JDK 21；如全局 Maven settings 仍激活 `jdk-1.8` profile，请在本机设置中移除或调整，项目不会修改用户的全局配置。
+
+2026-09-04 升级验证：`mvn clean verify '-Dredis.integration=true' '-Dmysql.integration=true'` 通过，46 项测试全部成功，包含 MyBatis/Jakarta/Redis 自动配置、14 项独立 Redis 8.10.1 测试和 MySQL 只读连接测试。可执行 JAR 已生成，入口字节码 major version 为 65（Java 21）。未执行数据库迁移或生产发布。

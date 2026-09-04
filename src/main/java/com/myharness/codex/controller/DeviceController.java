@@ -15,7 +15,7 @@ import com.myharness.codex.service.AgentDeviceService;
 import com.myharness.codex.service.WorkspaceService;
 import org.springframework.web.bind.annotation.*;
 
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 import java.util.List;
 import java.util.stream.Collectors;
 

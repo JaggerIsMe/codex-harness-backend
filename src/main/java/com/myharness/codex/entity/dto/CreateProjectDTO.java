@@ -1,8 +1,8 @@
 package com.myharness.codex.entity.dto;
 
-import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.NotNull;
-import javax.validation.constraints.Size;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 public class CreateProjectDTO {
     @NotBlank @Size(max=128) private String projectName;

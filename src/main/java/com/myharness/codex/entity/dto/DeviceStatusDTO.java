@@ -1,6 +1,6 @@
 package com.myharness.codex.entity.dto;
 
-import javax.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotBlank;
 
 public class DeviceStatusDTO {
     @NotBlank private String status;

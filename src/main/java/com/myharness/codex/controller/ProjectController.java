@@ -6,7 +6,7 @@ import com.myharness.codex.entity.vo.ProjectVO;
 import com.myharness.codex.security.UserContext;
 import com.myharness.codex.service.ProjectService;
 import org.springframework.web.bind.annotation.*;
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 import java.util.List;
 
 @RestController
