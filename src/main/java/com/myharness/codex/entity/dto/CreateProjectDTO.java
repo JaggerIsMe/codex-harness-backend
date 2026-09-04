@@ -1,0 +1,18 @@
+package com.myharness.codex.entity.dto;
+
+import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.NotNull;
+import javax.validation.constraints.Size;
+
+public class CreateProjectDTO {
+    @NotBlank @Size(max=128) private String projectName;
+    @NotNull private Long deviceId;
+    @NotNull private Long workspaceId;
+
+    public String getProjectName() { return projectName; }
+    public void setProjectName(String value) { projectName=value; }
+    public Long getDeviceId() { return deviceId; }
+    public void setDeviceId(Long value) { deviceId=value; }
+    public Long getWorkspaceId() { return workspaceId; }
+    public void setWorkspaceId(Long value) { workspaceId=value; }
+}

@@ -1,0 +1,51 @@
+server:
+  port: 9010
+
+spring:
+  redis:
+    host: localhost
+    port: 6379
+    password:
+    timeout: 2s
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 22MB
+  application:
+    name: harness
+  datasource:
+    url: jdbc:mysql://localhost:3306/newharness?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jackson:
+    time-zone: UTC
+    default-property-inclusion: non_null
+
+mybatis:
+  mapper-locations: classpath:/mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+harness:
+  message-stream:
+    replay-limit: 2000
+    retention-seconds: 3600
+    checkpoint-ms: 5000
+    event-retention-days: 7
+  security:
+    jwt-secret: zse6a8suuxZfJP7FquSReLWlL9E8qxGQkk1ECZbRfEe39wThsbBLlGe4XNSkqqMkCQimn2g1fiap36vKmoQnog==
+    jwt-expire-minutes: 120
+  bootstrap-admin:
+    enabled: true
+    username: admin
+    password: admin
+    display-name: 管理员
+  agent:
+    protocol-version: "1.0"
+    enrollment-ttl-minutes: 10
+    heartbeat-timeout-seconds: 45
+    offline-scan-interval-seconds: 15
+    command-timeout-seconds: 35
+    public-base-url: http://localhost:${server.port}
+    skill-storage-dir: D:/a_Coder/WorkSpace/webSer/myApps/backend-harness/skill-storage
