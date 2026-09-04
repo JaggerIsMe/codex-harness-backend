@@ -17,6 +17,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
 
 class AgentEventServiceImplTest {
+    @Test void replacementRequiresAtomicHistoryAndPreviousBindingCheck() {
+        var devices=mock(AgentDeviceMapper.class);var conversations=mock(ConversationMapper.class);
+        var clients=mock(ClientEventWebSocketHandler.class);
+        var service=new AgentEventServiceImpl(devices,conversations,mock(ApprovalMapper.class),mock(SkillMapper.class),clients,streams,transactions);
+        var envelope=new AgentProtocolEnvelope();envelope.setType("THREAD_STARTED");envelope.setMessageId("replace-1");envelope.setTimestamp(10L);
+        envelope.setPayload(new ObjectMapper().createObjectNode().put("conversationId","4").put("turnId","15")
+                .put("previousCodexThreadId","old").put("codexThreadId","replacement"));
+        when(devices.insertEvent(1L,"replace-1","THREAD_STARTED",10L)).thenReturn(1);
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,()->service.process(1L,envelope));
+        verify(clients,never()).sendToUser(any(),any());
+        verify(conversations,never()).setThreadStarted(any(),any(),any(),any());
+        when(conversations.replaceUnstartedThread(eq(4L),eq(1L),eq(15L),eq("old"),eq("replacement"),any())).thenReturn(1);
+        assertTrue(service.process(1L,envelope));
+        verify(conversations,times(2)).replaceUnstartedThread(eq(4L),eq(1L),eq(15L),eq("old"),eq("replacement"),any());
+    }
     private final com.myharness.codex.service.stream.ConversationMessageStream streams=mock(com.myharness.codex.service.stream.ConversationMessageStream.class);
     private final org.springframework.transaction.support.TransactionTemplate transactions=new org.springframework.transaction.support.TransactionTemplate() {
         @Override public <T>T execute(org.springframework.transaction.support.TransactionCallback<T> action) {

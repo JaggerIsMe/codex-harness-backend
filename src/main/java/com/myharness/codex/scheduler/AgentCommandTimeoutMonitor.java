@@ -14,11 +14,13 @@ public class AgentCommandTimeoutMonitor {
     private final AgentProperties properties;
     private final ConversationMapper conversations;
     private final SkillMapper skills;
+    private final com.myharness.codex.mapper.AgentDeviceMapper devices;
 
-    public AgentCommandTimeoutMonitor(AgentProperties properties, ConversationMapper conversations, SkillMapper skills) {
+    public AgentCommandTimeoutMonitor(AgentProperties properties, ConversationMapper conversations, SkillMapper skills,com.myharness.codex.mapper.AgentDeviceMapper devices) {
         this.properties = properties;
         this.conversations = conversations;
         this.skills = skills;
+        this.devices=devices;
     }
 
     @Scheduled(fixedDelay = 5000L)
@@ -29,5 +31,6 @@ public class AgentCommandTimeoutMonitor {
         conversations.failTimedOutThreadStarts(deadline);
         conversations.failTimedOutTurnStarts(deadline, now);
         skills.failTimedOutDeployments(deadline);
+        devices.failTimedOutWorkspaces(properties.getCommandTimeoutSeconds());
     }
 }

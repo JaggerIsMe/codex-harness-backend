@@ -13,6 +13,23 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public interface ConversationMapper {
+    // Only empty conversations or known pre-generation failures may replace an unpersisted Codex thread.
+    String RECREATABLE_THREAD = "NOT EXISTS(SELECT 1 FROM conversation_turn t WHERE t.conversation_id=#{id} AND t.id<>#{turnId} " +
+            "AND (t.codex_turn_id IS NOT NULL OR t.status<>'FAILED' OR t.failure_code IS NULL OR t.failure_code<>'COMMAND_FAILED' " +
+            "OR t.failure_message IS NULL OR NOT (t.failure_message LIKE 'Codex method failed: turn/start: failed to load configuration:%' " +
+            "OR t.failure_message LIKE 'Codex method failed: thread/read: thread not loaded:%' " +
+            "OR t.failure_message LIKE 'Codex thread is not loaded or persisted:%'))) " +
+            "AND NOT EXISTS(SELECT 1 FROM conversation_message m WHERE m.conversation_id=#{id} AND m.role<>'USER')";
+    @Select("SELECT " + RECREATABLE_THREAD)
+    boolean canRecreateUnstartedThread(@Param("id") Long id, @Param("turnId") Long turnId);
+
+    @Update("UPDATE conversation SET codex_thread_id=#{next},last_activity_at=#{now} WHERE id=#{id} AND device_id=#{deviceId} " +
+            "AND codex_thread_id=#{previous} AND status='ACTIVE' " +
+            "AND EXISTS(SELECT 1 FROM conversation_turn active WHERE active.id=#{turnId} AND active.conversation_id=#{id} AND active.status='CREATED') AND " + RECREATABLE_THREAD)
+    int replaceUnstartedThread(@Param("id") Long id,@Param("deviceId") Long deviceId,@Param("turnId") Long turnId,
+            @Param("previous") String previous,@Param("next") String next,@Param("now") LocalDateTime now);
+    @Select("SELECT t.id turn_id,c.id conversation_id,c.user_id,c.device_id,d.device_code FROM conversation_turn t JOIN conversation c ON c.id=t.conversation_id JOIN agent_device d ON d.id=c.device_id WHERE t.status IN ('CREATED','RUNNING','WAITING_APPROVAL')")
+    List<com.myharness.codex.entity.vo.RevokedTurnVO> selectRunningWork();
     @Insert("INSERT INTO conversation(user_id,device_id,workspace_id,project_id,title,status,last_activity_at) " +
             "VALUES(#{userId},#{deviceId},#{workspaceId},#{projectId},#{title},#{status},#{lastActivityAt})")
     @Options(useGeneratedKeys=true,keyProperty="id")

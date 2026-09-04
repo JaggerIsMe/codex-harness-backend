@@ -43,17 +43,21 @@ public class ConversationServiceImpl implements ConversationService {
     private final ObjectMapper objectMapper;
     private final ProjectMapper projectMapper;
     private final ConversationMessageStream streams;
+    private final com.myharness.codex.security.AuthorizationService access;
 
     public ConversationServiceImpl(ConversationMapper conversationMapper,AgentDeviceMapper deviceMapper,
                                    AgentCommandGateway gateway,TransactionTemplate transactions,
-                                   ApprovalMapper approvalMapper,ObjectMapper objectMapper,ProjectMapper projectMapper,ConversationMessageStream streams) {
+                                   ApprovalMapper approvalMapper,ObjectMapper objectMapper,ProjectMapper projectMapper,ConversationMessageStream streams,
+                                   com.myharness.codex.security.AuthorizationService access) {
         this.conversationMapper=conversationMapper; this.deviceMapper=deviceMapper; this.gateway=gateway; this.transactions=transactions;
         this.approvalMapper=approvalMapper; this.objectMapper=objectMapper;
         this.projectMapper=projectMapper;
         this.streams=streams;
+        this.access=access;
     }
 
     @Override public ConversationVO createConversation(Long projectId,CreateConversationDTO dto,Long operatorId) {
+        access.requirePermission(operatorId,"conversation:create");
         ProjectPO project=requireActiveProject(projectId,operatorId);
         AgentDevicePO device=requireOnline(project.getDeviceId());
         AgentWorkspacePO workspace=deviceMapper.selectWorkspace(project.getWorkspaceId(),device.getId());
@@ -77,6 +81,8 @@ public class ConversationServiceImpl implements ConversationService {
     }
 
     @Override public TurnVO startTurn(Long projectId,Long conversationId,StartTurnDTO dto,Long operatorId) {
+        access.requirePermission(operatorId,"turn:start");
+        requireActiveProject(projectId,operatorId);
         ConversationPO conversation=requireOwned(projectId,conversationId,operatorId);
         if (conversation.getCodexThreadId()==null) throw new BusinessException(ErrorCode.CONFLICT,"Agent 尚未完成会话初始化");
         requireOnline(conversation.getDeviceId());
@@ -96,6 +102,7 @@ public class ConversationServiceImpl implements ConversationService {
         payload.put("projectId",String.valueOf(conversation.getProjectId()));
         payload.put("workspaceName",conversation.getWorkspaceName());
         payload.put("codexThreadId",conversation.getCodexThreadId());
+        payload.put("recreateUnstartedThread",conversationMapper.canRecreateUnstartedThread(conversationId,turn.getId()));
         payload.put("message",dto.getMessage()); payload.put("model",trimOr(dto.getModel(),null));
         payload.put("reasoningEffort",trimOr(dto.getReasoningEffort(),null));
         try { gateway.send(conversation.getDeviceCode(),new AgentCommand("START_TURN",String.valueOf(turn.getId()),payload)); }
@@ -107,6 +114,7 @@ public class ConversationServiceImpl implements ConversationService {
     }
 
     @Override public void interruptTurn(Long projectId,Long conversationId,Long turnId,Long operatorId) {
+        access.requirePermission(operatorId,"turn:interrupt");
         ConversationPO conversation=requireOwned(projectId,conversationId,operatorId); requireOnline(conversation.getDeviceId());
         ConversationTurnPO turn=conversationMapper.selectTurn(turnId);
         if (turn==null || !conversationId.equals(turn.getConversationId()) || !("RUNNING".equals(turn.getStatus()) || "WAITING_APPROVAL".equals(turn.getStatus())))
@@ -145,19 +153,27 @@ public class ConversationServiceImpl implements ConversationService {
     }
 
     private ConversationPO requireOwned(Long projectId,Long id,Long userId) {
+        access.requirePermission(userId,"conversation:read");
         ConversationPO value=conversationMapper.selectOwnedConversation(projectId,id,userId);
         if (value==null) throw new BusinessException(ErrorCode.NOT_FOUND,"会话不存在");
+        access.requireDevice(userId,value.getDeviceId());
         return value;
     }
     private ProjectPO requireActiveProject(Long projectId,Long userId) {
+        access.requirePermission(userId,"conversation:read");
         ProjectPO value=projectMapper.selectOwned(projectId,userId);
         if (value==null) throw new BusinessException(ErrorCode.NOT_FOUND,"项目不存在");
+        access.requireDevice(userId,value.getDeviceId());
         if (!"ACTIVE".equals(value.getStatus())) throw new BusinessException(ErrorCode.CONFLICT,"项目当前不可执行");
+        if (!"ENABLED".equals(value.getWorkspaceStatus()) || value.getRootPath()==null)
+            throw new BusinessException(ErrorCode.CONFLICT,"项目执行目录尚未就绪");
         return value;
     }
     private AgentDevicePO requireOnline(Long deviceId) {
         AgentDevicePO device=deviceMapper.selectById(deviceId);
         if (device==null || "DISABLED".equals(device.getStatus())) throw new BusinessException(ErrorCode.NOT_FOUND,"设备不存在或已禁用");
+        if (!"WINDOWS_PROJECT_PROFILE".equals(device.getIsolationMode()))
+            throw new BusinessException(ErrorCode.CONFLICT,"请升级 Agent 以启用项目读取隔离");
         if (!gateway.isOnline(device.getDeviceCode())) throw new BusinessException(ErrorCode.AGENT_OFFLINE);
         return device;
     }

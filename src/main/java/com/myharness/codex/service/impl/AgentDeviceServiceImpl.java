@@ -11,7 +11,11 @@ import com.myharness.codex.websocket.AgentConnectionRegistry;
 import org.springframework.stereotype.Service;
 
 @Service
+@org.springframework.security.access.prepost.PreAuthorize("hasAuthority('device:manage')")
 public class AgentDeviceServiceImpl implements AgentDeviceService {
+    @Override public java.util.List<AgentDeviceVO> list() {
+        return mapper.selectAll().stream().map(AgentDeviceVO::new).toList();
+    }
     private final AgentDeviceMapper mapper; private final AgentConnectionRegistry connections; private final AgentEventService events;
     public AgentDeviceServiceImpl(AgentDeviceMapper mapper,AgentConnectionRegistry connections,AgentEventService events) {
         this.mapper=mapper; this.connections=connections; this.events=events;

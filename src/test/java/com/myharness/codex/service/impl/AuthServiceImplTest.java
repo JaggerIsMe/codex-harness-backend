@@ -41,7 +41,9 @@ class AuthServiceImplTest {
         properties.setJwtSecret("test-secret-with-at-least-32-bytes-long");
         properties.setJwtExpireMinutes(120L);
         jwtTokenService = new JwtTokenService(properties);
-        authService = new AuthServiceImpl(sysUserMapper, passwordEncoder, jwtTokenService);
+        authService = new AuthServiceImpl(sysUserMapper, passwordEncoder, jwtTokenService,
+                org.mockito.Mockito.mock(com.myharness.codex.security.AuthorizationService.class),
+                new com.myharness.codex.security.LoginAttemptLimiter());
     }
 
     @Test

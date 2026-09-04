@@ -38,7 +38,8 @@ class ConversationServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new ConversationServiceImpl(conversationMapper, deviceMapper, gateway, transactions,
-                approvalMapper, objectMapper, projectMapper,org.mockito.Mockito.mock(com.myharness.codex.service.stream.ConversationMessageStream.class));
+                approvalMapper, objectMapper, projectMapper,org.mockito.Mockito.mock(com.myharness.codex.service.stream.ConversationMessageStream.class),
+                org.mockito.Mockito.mock(com.myharness.codex.security.AuthorizationService.class));
     }
 
     @Test
@@ -47,6 +48,7 @@ class ConversationServiceImplTest {
         ConversationPO second = conversation(6L, 3L, "较早会话");
         com.myharness.codex.entity.po.ProjectPO project = new com.myharness.codex.entity.po.ProjectPO();
         project.setId(5L); project.setStatus("ACTIVE");
+        project.setWorkspaceStatus("ENABLED");project.setRootPath("D:/allowed");
         when(projectMapper.selectOwned(5L,3L)).thenReturn(project);
         when(conversationMapper.selectProjectConversations(5L,3L)).thenReturn(Arrays.asList(first, second));
 
@@ -89,19 +91,23 @@ class ConversationServiceImplTest {
 
     @Test
     void sendsPersistedConversationBindingWithEveryTurnForAgentRecovery() {
+        var project=new com.myharness.codex.entity.po.ProjectPO();
+        project.setId(5L);project.setDeviceId(2L);project.setStatus("ACTIVE");project.setWorkspaceStatus("ENABLED");project.setRootPath("D:/allowed");
+        when(projectMapper.selectOwned(5L,3L)).thenReturn(project);
         ConversationPO conversation = conversation(2L, 3L, "旅游规划");
         conversation.setCodexThreadId("original-codex-thread");
         conversation.setWorkspaceName("allowed-workspace");
         conversation.setDeviceCode("device-1");
         when(conversationMapper.selectOwnedConversation(5L, 2L, 3L)).thenReturn(conversation);
         var device = new com.myharness.codex.entity.po.AgentDevicePO();
-        device.setDeviceCode("device-1"); device.setStatus("ONLINE");
+        device.setDeviceCode("device-1"); device.setStatus("ONLINE"); device.setIsolationMode("WINDOWS_PROJECT_PROFILE");
         when(deviceMapper.selectById(2L)).thenReturn(device);
         when(gateway.isOnline("device-1")).thenReturn(true);
         var turn = new ConversationTurnPO();
         turn.setId(7L); turn.setConversationId(2L); turn.setStatus("CREATED");
         when(transactions.execute(org.mockito.ArgumentMatchers.any())).thenReturn(turn);
         when(conversationMapper.selectTurn(7L)).thenReturn(turn);
+        when(conversationMapper.canRecreateUnstartedThread(2L,7L)).thenReturn(true);
         var request = new com.myharness.codex.entity.dto.StartTurnDTO();
         request.setMessage("你好");
 
@@ -116,5 +122,6 @@ class ConversationServiceImplTest {
         assertEquals("original-codex-thread", payload.path("codexThreadId").asText());
         assertEquals("2", payload.path("conversationId").asText());
         assertEquals("7", payload.path("turnId").asText());
+        assertEquals(true,payload.path("recreateUnstartedThread").asBoolean());
     }
 }

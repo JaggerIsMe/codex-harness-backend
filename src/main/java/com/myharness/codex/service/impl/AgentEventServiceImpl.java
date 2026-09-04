@@ -158,6 +158,12 @@ public class AgentEventServiceImpl implements AgentEventService {
 
     private void threadStarted(Long deviceId, JsonNode payload, LocalDateTime now) {
         Long conversationId=id(payload,"conversationId");
+        if (payload.hasNonNull("previousCodexThreadId")) {
+            if (conversationMapper.replaceUnstartedThread(conversationId,deviceId,id(payload,"turnId"),
+                    text(payload,"previousCodexThreadId",128),text(payload,"codexThreadId",128),now)!=1)
+                throw new IllegalArgumentException("Conversation history or binding does not allow thread reinitialization");
+            return;
+        }
         conversationMapper.setThreadStarted(conversationId,deviceId,text(payload,"codexThreadId",128),now);
     }
     private void turnStarted(Long deviceId, JsonNode payload, LocalDateTime now) {

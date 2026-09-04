@@ -7,12 +7,13 @@ import jakarta.validation.constraints.Size;
 public class CreateProjectDTO {
     @NotBlank @Size(max=128) private String projectName;
     @NotNull private Long deviceId;
-    @NotNull private Long workspaceId;
+    @NotBlank @jakarta.validation.constraints.Pattern(regexp="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+    private String requestKey;
 
     public String getProjectName() { return projectName; }
     public void setProjectName(String value) { projectName=value; }
     public Long getDeviceId() { return deviceId; }
     public void setDeviceId(Long value) { deviceId=value; }
-    public Long getWorkspaceId() { return workspaceId; }
-    public void setWorkspaceId(Long value) { workspaceId=value; }
+    public String getRequestKey() { return requestKey; }
+    public void setRequestKey(String value) { requestKey=value; }
 }

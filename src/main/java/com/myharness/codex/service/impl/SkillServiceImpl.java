@@ -37,6 +37,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 @Service
+@org.springframework.security.access.prepost.PreAuthorize("hasAuthority('skill:manage')")
 public class SkillServiceImpl implements SkillService {
     private static final long MAX_UPLOAD_BYTES = 20L * 1024L * 1024L;
     private static final int MAX_ENTRIES = 500;

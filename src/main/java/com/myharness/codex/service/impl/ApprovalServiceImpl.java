@@ -19,10 +19,14 @@ import java.util.Map;
 public class ApprovalServiceImpl implements ApprovalService {
     private final ApprovalMapper mapper;
     private final AgentCommandGateway gateway;
-    public ApprovalServiceImpl(ApprovalMapper mapper,AgentCommandGateway gateway) { this.mapper=mapper; this.gateway=gateway; }
+    private final com.myharness.codex.security.AuthorizationService access;
+    public ApprovalServiceImpl(ApprovalMapper mapper,AgentCommandGateway gateway,com.myharness.codex.security.AuthorizationService access) {
+        this.mapper=mapper; this.gateway=gateway; this.access=access;
+    }
 
     @Override @Transactional
     public ApprovalRequestPO decide(Long approvalId,ApprovalDecisionDTO dto,Long operatorId) {
+        access.requirePermission(operatorId,"approval:decide");
         String decision=dto.getDecision().trim().toUpperCase();
         String status;
         if ("ACCEPT".equals(decision) || "ACCEPT_FOR_SESSION".equals(decision)) status="APPROVED";
@@ -31,6 +35,9 @@ public class ApprovalServiceImpl implements ApprovalService {
         else throw new BusinessException(ErrorCode.INVALID_REQUEST,"不支持的审批决定");
         ApprovalRequestPO approval=mapper.selectOwnedById(approvalId,operatorId);
         if (approval==null) throw new BusinessException(ErrorCode.NOT_FOUND,"审批不存在");
+        access.requireDevice(operatorId,approval.getDeviceId());
+        if ("ACCEPT_FOR_SESSION".equals(decision) && !access.hasPermission(operatorId,"device:manage"))
+            throw new BusinessException(ErrorCode.FORBIDDEN,"普通用户仅可批准当前请求");
         if (!gateway.isOnline(approval.getDeviceCode())) throw new BusinessException(ErrorCode.AGENT_OFFLINE);
         if (mapper.decide(approvalId,status,operatorId,LocalDateTime.now())!=1)
             throw new BusinessException(ErrorCode.CONFLICT,"审批已被处理");

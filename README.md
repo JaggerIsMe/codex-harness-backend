@@ -11,7 +11,7 @@ My Harness For Codex 的中台后端。已提供登录鉴权、设备注册、�
 Redis 使用 `spring.data.redis.*` 配置；外部配置中的旧 `spring.redis.*` 需同步迁移，环境变量对应 `SPRING_DATA_REDIS_HOST`、`SPRING_DATA_REDIS_PORT`、`SPRING_DATA_REDIS_PASSWORD`。本次升级不修改数据库结构、业务协议或启用虚拟线程。
 
 1. 使用 `src/main/resources/db/schema.sql` 初始化 `newharness` 数据库（可交付副本：`../../docs/newharness.sql`）。全新数据库只执行完整初始化脚本，无需再执行历史迁移脚本。脚本不复制旧 `harness` 库的数据或管理员账号。
-   已使用旧版 `schema.sql` 初始化过的数据库，先按需执行 `migration-agent-v1.sql`、`migration-dynamic-workspace.sql`，最后执行一次 `migration-project-isolation.sql`。
+   已使用旧版 `schema.sql` 初始化过的数据库，先按需执行 `migration-agent-v1.sql`、`migration-dynamic-workspace.sql`、`migration-project-isolation.sql`，再按 [用户与机器授权上线说明](../../docs/user-device-rbac.md) 显式选择管理员，执行一次 `migration-user-device-rbac.sql`。
 2. 在 PowerShell 中设置本地配置：
 
 ```powershell
@@ -61,7 +61,7 @@ mvn spring-boot:run
 - `POST /api/v1/skill-deployments/devices/{deviceId}/versions/{versionId}`
 - `POST /api/v1/skill-deployments/{id}/remove`
 
-一个 `agent_workspace` 只能绑定一个 `codex_project`。会话通过数据库复合外键同时锁定项目、用户、设备和工作区；项目会话接口会再次校验当前用户和项目。Agent 连接 `/ws/agent`，浏览器使用 JWT 连接 `/ws/client?access_token=<token>`，会话事件只发送给会话所有者。生产环境应将 `public-base-url` 配为 HTTPS，并在反向代理上提供 WSS。
+一个 `agent_workspace` 只能绑定一个 `codex_project`。会话通过数据库复合外键同时锁定项目、用户、设备和工作区；项目会话接口检查当前用户、归属和机器授权。Agent 连接 `/ws/agent`，浏览器先以 JWT 调用 `POST /api/v1/auth/socket-ticket`，再连接 `/ws/client?ticket=<一次性票据>`；不再接受长期 JWT 查询参数。生产环境应通过同源反向代理提供 HTTPS/WSS。用户管理、新接口和迁移说明见 [用户与机器授权](../../docs/user-device-rbac.md)。
 
 除 Agent 注册和 Skill 下载接口外，`/api/v1/**` 均要求 `Authorization: Bearer <JWT>`。
 

@@ -4,11 +4,19 @@ import com.myharness.codex.entity.po.ProjectPO;
 import java.time.LocalDateTime;
 
 public class ProjectVO {
+    private final String failureCode;
+    private final String failureMessage;
+    public String getFailureCode(){return failureCode;}
+    public String getFailureMessage(){return failureMessage;}
+    public String getProvisioningStatus(){
+        return "ENABLED".equals(workspaceStatus) && rootPath!=null ? "READY" : "CREATING".equals(workspaceStatus) ? "PREPARING" : "FAILED";
+    }
     private final Long id; private final String projectName; private final String status; private final String isolationMode;
     private final Long deviceId; private final String deviceCode; private final String deviceName; private final String deviceStatus;
     private final Long workspaceId; private final String workspaceName; private final String rootPath; private final String workspaceStatus;
     private final Integer conversationCount; private final LocalDateTime createdAt;
     public ProjectVO(ProjectPO value) {
+        failureCode=value.getFailureCode();failureMessage=value.getFailureMessage();
         id=value.getId(); projectName=value.getProjectName(); status=value.getStatus(); isolationMode=value.getIsolationMode();
         deviceId=value.getDeviceId(); deviceCode=value.getDeviceCode(); deviceName=value.getDeviceName(); deviceStatus=value.getDeviceStatus();
         workspaceId=value.getWorkspaceId(); workspaceName=value.getWorkspaceName(); rootPath=value.getRootPath(); workspaceStatus=value.getWorkspaceStatus();

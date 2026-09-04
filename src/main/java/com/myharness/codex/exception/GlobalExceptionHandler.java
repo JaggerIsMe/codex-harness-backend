@@ -16,6 +16,10 @@ import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<ApiResponseVO<Void>> handleAccessDenied() {
+        return ResponseEntity.status(403).body(ApiResponseVO.error(403,"没有执行此操作的权限"));
+    }
 
     private static final Logger LOGGER = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 

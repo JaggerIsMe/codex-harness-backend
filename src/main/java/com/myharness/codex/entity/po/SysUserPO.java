@@ -5,6 +5,12 @@ import java.time.LocalDateTime;
 public class SysUserPO {
 
     private Long id;
+    private long tokenVersion;
+    private boolean mustChangePassword;
+    public long getTokenVersion() { return tokenVersion; }
+    public void setTokenVersion(long value) { tokenVersion=value; }
+    public boolean isMustChangePassword() { return mustChangePassword; }
+    public void setMustChangePassword(boolean value) { mustChangePassword=value; }
     private String username;
     private String passwordHash;
     private String displayName;

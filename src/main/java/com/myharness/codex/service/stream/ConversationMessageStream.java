@@ -63,6 +63,7 @@ public class ConversationMessageStream {
             // Redis retains dirty snapshots on SQL failure; the scheduled checkpoint retries.
             if(!complete.isEmpty()) transactions.execute(status -> {complete.forEach(mapper::saveLogicalMessage); return null;});
             Map<String,Object> frame=new LinkedHashMap<>(); frame.put("type","MESSAGE_UPDATED"); frame.put("payload",update);
+            frame.put("deviceId",conversation.getDeviceId());
             clients.sendToUser(conversation.getUserId(),frame);
             return true;
         }

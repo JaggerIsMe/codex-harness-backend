@@ -18,6 +18,9 @@ public class ProjectController {
         return ApiResponseVO.success(service.createProject(dto,UserContext.requireCurrentUser().getId()));
     }
     @GetMapping public ApiResponseVO<List<ProjectVO>> list(){return ApiResponseVO.success(service.getProjects(UserContext.requireCurrentUser().getId()));}
+    @PostMapping("/{id}/retry-preparation") public ApiResponseVO<ProjectVO> retry(@PathVariable Long id){
+        return ApiResponseVO.success(service.retryPreparation(id,UserContext.requireCurrentUser().getId()));
+    }
     @GetMapping("/{id}") public ApiResponseVO<ProjectVO> get(@PathVariable Long id){
         return ApiResponseVO.success(service.getProject(id,UserContext.requireCurrentUser().getId()));
     }

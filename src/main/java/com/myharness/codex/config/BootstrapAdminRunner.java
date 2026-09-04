@@ -22,13 +22,15 @@ public class BootstrapAdminRunner implements ApplicationRunner {
     private final BootstrapAdminProperties properties;
     private final SysUserMapper sysUserMapper;
     private final PasswordEncoder passwordEncoder;
+    private final com.myharness.codex.mapper.RbacMapper rbac;
 
     public BootstrapAdminRunner(BootstrapAdminProperties properties,
                                 SysUserMapper sysUserMapper,
-                                PasswordEncoder passwordEncoder) {
+                                PasswordEncoder passwordEncoder, com.myharness.codex.mapper.RbacMapper rbac) {
         this.properties = properties;
         this.sysUserMapper = sysUserMapper;
         this.passwordEncoder = passwordEncoder;
+        this.rbac=rbac;
     }
 
     @Override
@@ -39,6 +41,7 @@ public class BootstrapAdminRunner implements ApplicationRunner {
                     "Bootstrap admin requires HARNESS_BOOTSTRAP_ADMIN_USERNAME and HARNESS_BOOTSTRAP_ADMIN_PASSWORD");
         }
         String username = properties.getUsername().trim();
+        rbac.lockAdministratorRole();
         if (sysUserMapper.selectByUsername(username) != null) {
             LOGGER.info("Bootstrap administrator already exists: {}", username);
             return;
@@ -50,7 +53,9 @@ public class BootstrapAdminRunner implements ApplicationRunner {
         user.setDisplayName(StringUtils.hasText(properties.getDisplayName())
                 ? properties.getDisplayName().trim() : username);
         user.setStatus(UserStatus.ENABLED.name());
+        user.setMustChangePassword(true);
         sysUserMapper.insert(user);
+        rbac.assignRole(user.getId(),"SYS_ADMIN");
         LOGGER.info("Bootstrap administrator created: {}", username);
     }
 }

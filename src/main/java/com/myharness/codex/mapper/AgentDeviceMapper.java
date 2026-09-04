@@ -13,6 +13,12 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public interface AgentDeviceMapper {
+    @Update("UPDATE agent_workspace SET status='FAILED',failure_code='COMMAND_TIMEOUT',failure_message='目录准备超时，可重试' " +
+            "WHERE status='CREATING' AND updated_at<DATE_SUB(CURRENT_TIMESTAMP(3),INTERVAL #{timeoutSeconds} SECOND)")
+    int failTimedOutWorkspaces(@Param("timeoutSeconds") long timeoutSeconds);
+
+    @Update("UPDATE agent_workspace SET status='CREATING',failure_code=NULL,failure_message=NULL,updated_at=CURRENT_TIMESTAMP(3) WHERE id=#{id} AND device_id=#{deviceId} AND status='FAILED'")
+    int retryProjectWorkspace(@Param("id") Long id,@Param("deviceId") Long deviceId);
     @org.apache.ibatis.annotations.Delete("DELETE FROM agent_event_message WHERE created_at<#{deadline} ORDER BY created_at LIMIT 1000")
     int deleteExpiredEvents(@Param("deadline") LocalDateTime deadline);
     @Insert("INSERT INTO agent_device(enrollment_id,device_code,device_name,token_hash,status,agent_version,os_name,os_version) " +
@@ -74,11 +80,11 @@ public interface AgentDeviceMapper {
     int insertCreatingWorkspace(AgentWorkspacePO workspace);
 
     @Update("UPDATE agent_workspace SET root_path=#{rootPath},root_path_hash=#{rootPathHash},status='ENABLED'," +
-            "failure_code=NULL,failure_message=NULL,last_reported_at=#{lastReportedAt} WHERE id=#{id} AND device_id=#{deviceId}")
+            "failure_code=NULL,failure_message=NULL,last_reported_at=#{lastReportedAt} WHERE id=#{id} AND device_id=#{deviceId} AND status<>'DISABLED'")
     int completeWorkspace(AgentWorkspacePO workspace);
 
     @Update("UPDATE agent_workspace SET status='FAILED',failure_code=#{failureCode},failure_message=#{failureMessage} " +
-            "WHERE id=#{id} AND device_id=#{deviceId}")
+            "WHERE id=#{id} AND device_id=#{deviceId} AND status='CREATING'")
     int failWorkspace(AgentWorkspacePO workspace);
 
     @Update("UPDATE agent_workspace SET status='CREATING',failure_code=NULL,failure_message=NULL,created_by=#{createdBy} " +

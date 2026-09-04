@@ -28,12 +28,17 @@ public class JwtTokenService {
     }
 
     public String createToken(Long userId, String username) {
+        return createToken(userId,username,0);
+    }
+
+    public String createToken(Long userId, String username, long version) {
         Instant issuedAt = Instant.now();
         Instant expiresAt = issuedAt.plus(properties.getJwtExpireMinutes(), ChronoUnit.MINUTES);
         return Jwts.builder()
                 .setIssuer(ISSUER)
                 .setSubject(String.valueOf(userId))
                 .claim("username", username)
+                .claim("version", version)
                 .setIssuedAt(Date.from(issuedAt))
                 .setExpiration(Date.from(expiresAt))
                 .signWith(signingKey())
@@ -41,6 +46,10 @@ public class JwtTokenService {
     }
 
     public Long parseUserId(String token) {
+        return Long.valueOf(parseClaims(token).getSubject());
+    }
+
+    public Claims parseClaims(String token) {
         try {
             Claims claims = Jwts.parserBuilder()
                     .setSigningKey(signingKey())
@@ -48,7 +57,8 @@ public class JwtTokenService {
                     .build()
                     .parseClaimsJws(token)
                     .getBody();
-            return Long.valueOf(claims.getSubject());
+            Long.parseLong(claims.getSubject());
+            return claims;
         } catch (JwtException | IllegalArgumentException exception) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
         }

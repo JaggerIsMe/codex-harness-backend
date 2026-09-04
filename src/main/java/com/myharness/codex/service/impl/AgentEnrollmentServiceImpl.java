@@ -37,6 +37,7 @@ public class AgentEnrollmentServiceImpl implements AgentEnrollmentService {
 
     @Override
     @Transactional
+    @org.springframework.security.access.prepost.PreAuthorize("hasAuthority('device:manage')")
     public EnrollmentVO create(CreateEnrollmentDTO dto, Long operatorId) {
         long minutes = dto != null && dto.getExpiresInMinutes() != null
                 ? dto.getExpiresInMinutes() : properties.getEnrollmentTtlMinutes();

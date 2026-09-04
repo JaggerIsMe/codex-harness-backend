@@ -8,4 +8,5 @@ public interface ProjectService {
     ProjectVO createProject(CreateProjectDTO dto,Long operatorId);
     ProjectVO getProject(Long projectId,Long operatorId);
     List<ProjectVO> getProjects(Long operatorId);
+    ProjectVO retryPreparation(Long projectId,Long operatorId);
 }

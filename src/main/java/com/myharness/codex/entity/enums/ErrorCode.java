@@ -6,6 +6,9 @@ public enum ErrorCode {
 
     INVALID_REQUEST(400, HttpStatus.BAD_REQUEST, "请求参数不正确"),
     UNAUTHORIZED(401, HttpStatus.UNAUTHORIZED, "未登录或登录已失效"),
+    FORBIDDEN(403, HttpStatus.FORBIDDEN, "没有执行此操作的权限"),
+    PASSWORD_CHANGE_REQUIRED(40301, HttpStatus.FORBIDDEN, "请先修改初始密码"),
+    TOO_MANY_REQUESTS(429, HttpStatus.TOO_MANY_REQUESTS, "登录尝试过于频繁，请稍后再试"),
     INVALID_CREDENTIALS(401, HttpStatus.UNAUTHORIZED, "用户名或密码错误"),
     USER_DISABLED(403, HttpStatus.FORBIDDEN, "用户已被禁用"),
     NOT_FOUND(404, HttpStatus.NOT_FOUND, "资源不存在"),

@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
+@org.springframework.security.access.prepost.PreAuthorize("hasAuthority('device:manage')")
 public class WorkspaceServiceImpl implements WorkspaceService {
     private final AgentDeviceMapper mapper;
     private final AgentCommandGateway gateway;

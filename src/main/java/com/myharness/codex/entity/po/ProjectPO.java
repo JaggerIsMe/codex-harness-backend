@@ -4,6 +4,12 @@ import java.time.LocalDateTime;
 
 public class ProjectPO {
     private Long id;
+    private String requestKey;
+    private String failureCode;
+    private String failureMessage;
+    public String getRequestKey(){return requestKey;} public void setRequestKey(String value){requestKey=value;}
+    public String getFailureCode(){return failureCode;} public void setFailureCode(String value){failureCode=value;}
+    public String getFailureMessage(){return failureMessage;} public void setFailureMessage(String value){failureMessage=value;}
     private Long userId;
     private Long deviceId;
     private Long workspaceId;

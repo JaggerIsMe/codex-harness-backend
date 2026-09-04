@@ -23,14 +23,12 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/v1/devices")
 public class DeviceController {
     private final AgentEnrollmentService enrollmentService;
-    private final AgentDeviceMapper deviceMapper;
     private final AgentDeviceService deviceService;
     private final WorkspaceService workspaceService;
 
-    public DeviceController(AgentEnrollmentService enrollmentService, AgentDeviceMapper deviceMapper,
+    public DeviceController(AgentEnrollmentService enrollmentService,
                             AgentDeviceService deviceService, WorkspaceService workspaceService) {
         this.enrollmentService = enrollmentService;
-        this.deviceMapper = deviceMapper;
         this.deviceService = deviceService;
         this.workspaceService = workspaceService;
     }
@@ -42,7 +40,7 @@ public class DeviceController {
 
     @GetMapping
     public ApiResponseVO<List<AgentDeviceVO>> devices() {
-        return ApiResponseVO.success(deviceMapper.selectAll().stream().map(AgentDeviceVO::new).collect(Collectors.toList()));
+        return ApiResponseVO.success(deviceService.list());
     }
 
     @GetMapping("/{deviceId}/workspaces")

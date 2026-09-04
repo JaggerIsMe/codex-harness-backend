@@ -22,15 +22,19 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
+@org.springframework.security.access.prepost.PreAuthorize("hasAuthority('skill:manage')")
 public class SkillDeploymentServiceImpl implements SkillDeploymentService {
     private final SkillMapper mapper;
     private final ProjectMapper projectMapper;
     private final AgentCommandGateway gateway;
     private final AgentProperties properties;
+    private final com.myharness.codex.security.AuthorizationService access;
 
     public SkillDeploymentServiceImpl(SkillMapper mapper, ProjectMapper projectMapper,
-                                      AgentCommandGateway gateway, AgentProperties properties) {
+                                      AgentCommandGateway gateway, AgentProperties properties,
+                                      com.myharness.codex.security.AuthorizationService access) {
         this.mapper = mapper; this.projectMapper = projectMapper; this.gateway = gateway; this.properties = properties;
+        this.access=access;
     }
 
     @Override
@@ -46,6 +50,7 @@ public class SkillDeploymentServiceImpl implements SkillDeploymentService {
             if (!"ENABLED".equals(project.getWorkspaceStatus()) || project.getRootPath() == null)
                 throw new BusinessException(ErrorCode.CONFLICT, "项目工作区未就绪");
             deviceId = project.getDeviceId();
+            access.requireDevice(operatorId,deviceId);
         }
         String scopeKey = "GLOBAL".equals(scopeType) ? "GLOBAL" : "PROJECT:" + project.getId();
         SkillDeploymentPO deployment = mapper.selectDeployable(deviceId, versionId, scopeType,
@@ -94,6 +99,7 @@ public class SkillDeploymentServiceImpl implements SkillDeploymentService {
             throw new BusinessException(ErrorCode.INVALID_REQUEST, "Skill 下发状态不正确");
         if (scopeType != null && !scopeType.trim().isEmpty()) requireScopeType(scopeType);
         return mapper.selectDeployments(trim(keyword), trim(status), trim(scopeType), operatorId).stream()
+                .filter(value -> !"PROJECT".equals(value.getScopeType()) || access.canUseDevice(operatorId,value.getDeviceId()))
                 .map(SkillDeploymentVO::new).collect(Collectors.toList());
     }
 
@@ -110,6 +116,7 @@ public class SkillDeploymentServiceImpl implements SkillDeploymentService {
     private void requireAccessible(SkillDeploymentPO deployment, Long operatorId) {
         if ("PROJECT".equals(deployment.getScopeType()) && projectMapper.selectOwned(deployment.getProjectId(), operatorId) == null)
             throw new BusinessException(ErrorCode.NOT_FOUND, "Skill 下发记录不存在");
+        if ("PROJECT".equals(deployment.getScopeType())) access.requireDevice(operatorId,deployment.getDeviceId());
     }
 
     private String requireScopeType(String value) {

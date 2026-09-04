@@ -25,19 +25,24 @@ public class AuthServiceImpl implements AuthService {
     private final SysUserMapper sysUserMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenService jwtTokenService;
+    private final com.myharness.codex.security.AuthorizationService authorization;
+    private final com.myharness.codex.security.LoginAttemptLimiter limiter;
 
     public AuthServiceImpl(SysUserMapper sysUserMapper,
                            PasswordEncoder passwordEncoder,
-                           JwtTokenService jwtTokenService) {
+                           JwtTokenService jwtTokenService, com.myharness.codex.security.AuthorizationService authorization,
+                           com.myharness.codex.security.LoginAttemptLimiter limiter) {
         this.sysUserMapper = sysUserMapper;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenService = jwtTokenService;
+        this.authorization=authorization; this.limiter=limiter;
     }
 
     @Override
     @Transactional
     public LoginVO login(LoginDTO dto) {
         String username = dto.getUsername().trim();
+        limiter.attempt(username.toLowerCase(java.util.Locale.ROOT));
         SysUserPO user = sysUserMapper.selectByUsername(username);
         if (user == null || !passwordEncoder.matches(dto.getPassword(), user.getPasswordHash())) {
             throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
@@ -47,18 +52,20 @@ public class AuthServiceImpl implements AuthService {
         }
 
         sysUserMapper.updateLastLoginAt(user.getId(), LocalDateTime.now(ZoneOffset.UTC));
+        limiter.success(username.toLowerCase(java.util.Locale.ROOT));
         UserProfileVO profile = toProfile(user);
-        String accessToken = jwtTokenService.createToken(user.getId(), user.getUsername());
+        String accessToken = jwtTokenService.createToken(user.getId(), user.getUsername(),user.getTokenVersion());
         return new LoginVO(accessToken, jwtTokenService.getExpiresInSeconds(), profile);
     }
 
     @Override
     public UserProfileVO getCurrentUser() {
         UserPrincipal principal = UserContext.requireCurrentUser();
-        return new UserProfileVO(principal.getId(), principal.getUsername(), principal.getDisplayName());
+        return toProfile(authorization.requireEnabled(principal.getId()));
     }
 
     private UserProfileVO toProfile(SysUserPO user) {
-        return new UserProfileVO(user.getId(), user.getUsername(), user.getDisplayName());
+        return new UserProfileVO(user.getId(), user.getUsername(), user.getDisplayName())
+                .withAccess(authorization.roles(user.getId()),authorization.permissions(user.getId()),user.isMustChangePassword());
     }
 }
