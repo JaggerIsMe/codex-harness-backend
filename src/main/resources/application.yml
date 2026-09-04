@@ -28,6 +28,13 @@ mybatis:
   configuration:
     map-underscore-to-camel-case: true
 
+project:
+  folder: D:/a_Coder/WorkSpace/webSer/myApps/backend-harness
+
+log:
+  root:
+    level: debug
+
 harness:
   message-stream:
     replay-limit: 2000

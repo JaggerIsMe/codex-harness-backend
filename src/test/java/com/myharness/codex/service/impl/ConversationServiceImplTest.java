@@ -86,4 +86,35 @@ class ConversationServiceImplTest {
         value.setTitle(title); value.setStatus("ACTIVE");
         return value;
     }
+
+    @Test
+    void sendsPersistedConversationBindingWithEveryTurnForAgentRecovery() {
+        ConversationPO conversation = conversation(2L, 3L, "旅游规划");
+        conversation.setCodexThreadId("original-codex-thread");
+        conversation.setWorkspaceName("allowed-workspace");
+        conversation.setDeviceCode("device-1");
+        when(conversationMapper.selectOwnedConversation(5L, 2L, 3L)).thenReturn(conversation);
+        var device = new com.myharness.codex.entity.po.AgentDevicePO();
+        device.setDeviceCode("device-1"); device.setStatus("ONLINE");
+        when(deviceMapper.selectById(2L)).thenReturn(device);
+        when(gateway.isOnline("device-1")).thenReturn(true);
+        var turn = new ConversationTurnPO();
+        turn.setId(7L); turn.setConversationId(2L); turn.setStatus("CREATED");
+        when(transactions.execute(org.mockito.ArgumentMatchers.any())).thenReturn(turn);
+        when(conversationMapper.selectTurn(7L)).thenReturn(turn);
+        var request = new com.myharness.codex.entity.dto.StartTurnDTO();
+        request.setMessage("你好");
+
+        service.startTurn(5L, 2L, request, 3L);
+
+        var sent = org.mockito.ArgumentCaptor.forClass(com.myharness.codex.gateway.AgentCommand.class);
+        org.mockito.Mockito.verify(gateway).send(org.mockito.ArgumentMatchers.eq("device-1"), sent.capture());
+        var payload = new ObjectMapper().valueToTree(sent.getValue().getPayload());
+        assertEquals("START_TURN", sent.getValue().getType());
+        assertEquals("5", payload.path("projectId").asText());
+        assertEquals("allowed-workspace", payload.path("workspaceName").asText());
+        assertEquals("original-codex-thread", payload.path("codexThreadId").asText());
+        assertEquals("2", payload.path("conversationId").asText());
+        assertEquals("7", payload.path("turnId").asText());
+    }
 }

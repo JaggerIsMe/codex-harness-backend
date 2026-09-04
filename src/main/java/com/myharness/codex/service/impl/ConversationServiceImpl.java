@@ -93,6 +93,9 @@ public class ConversationServiceImpl implements ConversationService {
         } catch (DuplicateKeyException exception) { throw new BusinessException(ErrorCode.CONFLICT,"当前会话已有活动任务"); }
         Map<String,Object> payload=new LinkedHashMap<>();
         payload.put("conversationId",String.valueOf(conversationId)); payload.put("turnId",String.valueOf(turn.getId()));
+        payload.put("projectId",String.valueOf(conversation.getProjectId()));
+        payload.put("workspaceName",conversation.getWorkspaceName());
+        payload.put("codexThreadId",conversation.getCodexThreadId());
         payload.put("message",dto.getMessage()); payload.put("model",trimOr(dto.getModel(),null));
         payload.put("reasoningEffort",trimOr(dto.getReasoningEffort(),null));
         try { gateway.send(conversation.getDeviceCode(),new AgentCommand("START_TURN",String.valueOf(turn.getId()),payload)); }
