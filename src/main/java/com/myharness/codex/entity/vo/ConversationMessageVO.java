@@ -4,6 +4,9 @@ import com.myharness.codex.entity.po.ConversationMessagePO;
 import java.time.LocalDateTime;
 
 public class ConversationMessageVO {
+    private java.util.List<ConversationAttachmentVO> attachments=java.util.List.of();
+    public java.util.List<ConversationAttachmentVO> getAttachments(){return attachments;}
+    public void setAttachments(java.util.List<ConversationAttachmentVO> value){attachments=value;}
     private final Long id; private final Long turnId; private final Long sequenceNo; private final String role;
     private final String messageType; private final String content; private final LocalDateTime createdAt;
     public ConversationMessageVO(ConversationMessagePO value){this(value,value.getContent());}

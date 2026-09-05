@@ -31,7 +31,7 @@ class ConversationServiceImplTest {
     @Mock private AgentCommandGateway gateway;
     @Mock private TransactionTemplate transactions;
     @Mock private ApprovalMapper approvalMapper;
-    @Mock private ObjectMapper objectMapper;
+    private ObjectMapper objectMapper=new ObjectMapper();
     @Mock private ProjectMapper projectMapper;
     private ConversationServiceImpl service;
 
@@ -39,7 +39,8 @@ class ConversationServiceImplTest {
     void setUp() {
         service = new ConversationServiceImpl(conversationMapper, deviceMapper, gateway, transactions,
                 approvalMapper, objectMapper, projectMapper,org.mockito.Mockito.mock(com.myharness.codex.service.stream.ConversationMessageStream.class),
-                org.mockito.Mockito.mock(com.myharness.codex.security.AuthorizationService.class));
+                org.mockito.Mockito.mock(com.myharness.codex.security.AuthorizationService.class),
+                org.mockito.Mockito.mock(com.myharness.codex.service.ConversationAttachmentService.class));
     }
 
     @Test
@@ -105,7 +106,10 @@ class ConversationServiceImplTest {
         when(gateway.isOnline("device-1")).thenReturn(true);
         var turn = new ConversationTurnPO();
         turn.setId(7L); turn.setConversationId(2L); turn.setStatus("CREATED");
-        when(transactions.execute(org.mockito.ArgumentMatchers.any())).thenReturn(turn);
+        when(transactions.execute(org.mockito.ArgumentMatchers.any())).thenAnswer(invocation ->
+                ((org.springframework.transaction.support.TransactionCallback<?>)invocation.getArgument(0)).doInTransaction(org.mockito.Mockito.mock(org.springframework.transaction.TransactionStatus.class)));
+        when(conversationMapper.lockConversation(2L)).thenReturn(conversation);
+        org.mockito.Mockito.doAnswer(invocation -> { ((ConversationTurnPO)invocation.getArgument(0)).setId(7L); return 1; }).when(conversationMapper).insertTurn(org.mockito.ArgumentMatchers.any());
         when(conversationMapper.selectTurn(7L)).thenReturn(turn);
         when(conversationMapper.canRecreateUnstartedThread(2L,7L)).thenReturn(true);
         var request = new com.myharness.codex.entity.dto.StartTurnDTO();

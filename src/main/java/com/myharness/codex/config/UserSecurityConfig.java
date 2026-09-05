@@ -20,7 +20,11 @@ public class UserSecurityConfig {
             .formLogin(f->f.disable()).httpBasic(b->b.disable()).logout(l->l.disable())
             .authorizeHttpRequests(a->a
                 .requestMatchers(HttpMethod.POST,"/api/v1/auth/login","/api/v1/agent/enroll").permitAll()
-                .requestMatchers(HttpMethod.GET,"/api/v1/agent/skill-versions/*/download","/ws/client","/ws/agent").permitAll()
+                .requestMatchers(HttpMethod.GET,"/api/v1/agent/skill-versions/*/download","/api/v1/agent/turns/*/attachments","/api/v1/agent/turns/*/attachments/*/download","/ws/client","/ws/agent").permitAll()
+                // Artifact endpoints authenticate Device credentials and Turn ownership in their service.
+                .requestMatchers(HttpMethod.POST,"/api/v1/agent/turns/*/artifacts","/api/v1/agent/turns/*/artifacts/*/failed").permitAll()
+                .requestMatchers(HttpMethod.GET,"/api/v1/agent/turns/*/artifacts/*").permitAll()
+                .requestMatchers(HttpMethod.PUT,"/api/v1/agent/turns/*/artifacts/*/content").permitAll()
                 .requestMatchers("/api/v1/auth/profile","/api/v1/auth/logout","/api/v1/auth/change-password","/api/v1/auth/socket-ticket").authenticated()
                 .requestMatchers("/api/v1/users/**","/api/v1/roles").hasAuthority("system:user:manage")
                 .requestMatchers("/api/v1/devices/available").hasAuthority("workspace:use")

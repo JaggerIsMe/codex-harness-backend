@@ -13,6 +13,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public interface ConversationMapper {
+    @Select("SELECT * FROM conversation_turn WHERE conversation_id=#{cid} AND client_request_id=#{key}")
+    ConversationTurnPO byClientRequest(@Param("cid") Long cid,@Param("key") String key);
+
     // Only empty conversations or known pre-generation failures may replace an unpersisted Codex thread.
     String RECREATABLE_THREAD = "NOT EXISTS(SELECT 1 FROM conversation_turn t WHERE t.conversation_id=#{id} AND t.id<>#{turnId} " +
             "AND (t.codex_turn_id IS NOT NULL OR t.status<>'FAILED' OR t.failure_code IS NULL OR t.failure_code<>'COMMAND_FAILED' " +
@@ -66,14 +69,14 @@ public interface ConversationMapper {
     @Update("UPDATE conversation SET status='FAILED',last_activity_at=#{now} WHERE id=#{id} AND device_id=#{deviceId}")
     int failConversation(@Param("id") Long id,@Param("deviceId") Long deviceId,@Param("now") LocalDateTime now);
 
-    @Insert("INSERT INTO conversation_turn(conversation_id,status) VALUES(#{conversationId},'CREATED')")
+    @Insert("INSERT INTO conversation_turn(conversation_id,status,client_request_id,request_hash,preparation_phase) VALUES(#{conversationId},'CREATED',#{clientRequestId},#{requestHash},#{preparationPhase})")
     @Options(useGeneratedKeys=true,keyProperty="id")
     int insertTurn(ConversationTurnPO turn);
 
-    @Select("SELECT id,conversation_id,codex_turn_id,status FROM conversation_turn WHERE id=#{id}")
+    @Select("SELECT id,conversation_id,codex_turn_id,status,client_request_id,request_hash,preparation_phase FROM conversation_turn WHERE id=#{id}")
     ConversationTurnPO selectTurn(@Param("id") Long id);
 
-    @Select("SELECT id,conversation_id,codex_turn_id,status FROM conversation_turn " +
+    @Select("SELECT id,conversation_id,codex_turn_id,status,client_request_id,request_hash,preparation_phase FROM conversation_turn " +
             "WHERE conversation_id=#{conversationId} AND status IN ('CREATED','RUNNING','WAITING_APPROVAL') " +
             "ORDER BY id DESC LIMIT 1")
     ConversationTurnPO selectActiveTurn(@Param("conversationId") Long conversationId);
@@ -109,7 +112,7 @@ public interface ConversationMapper {
     int failTimedOutThreadStarts(@Param("deadline") LocalDateTime deadline);
 
     @Update("UPDATE conversation_turn SET status='FAILED',failure_code='COMMAND_TIMEOUT',failure_message='Agent command timed out',finished_at=#{now} " +
-            "WHERE status='CREATED' AND created_at<#{deadline}")
+            "WHERE status='CREATED' AND created_at<#{deadline} AND (preparation_phase IS NULL OR created_at<DATE_SUB(#{now}, INTERVAL 180 SECOND))")
     int failTimedOutTurnStarts(@Param("deadline") LocalDateTime deadline,@Param("now") LocalDateTime now);
 
     @Select("SELECT COALESCE(MAX(sequence_no),0)+1 FROM conversation_message WHERE conversation_id=#{conversationId}")
@@ -145,7 +148,7 @@ public interface ConversationMapper {
     @Select("SELECT * FROM conversation_message WHERE turn_id=#{turnId} AND message_key IS NOT NULL ORDER BY sequence_no")
     List<ConversationMessagePO> selectTurnMessages(@Param("turnId") Long turnId);
 
-    @Select("SELECT id,conversation_id,codex_turn_id,status FROM conversation_turn WHERE conversation_id=#{conversationId} ORDER BY id DESC LIMIT 1")
+    @Select("SELECT id,conversation_id,codex_turn_id,status,client_request_id,request_hash,preparation_phase FROM conversation_turn WHERE conversation_id=#{conversationId} ORDER BY id DESC LIMIT 1")
     ConversationTurnPO selectLatestTurn(@Param("conversationId") Long conversationId);
 
     @Select("SELECT t.id,t.conversation_id,t.status FROM conversation_turn t JOIN conversation c ON c.id=t.conversation_id " +

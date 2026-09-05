@@ -3,6 +3,9 @@ package com.myharness.codex.entity.po;
 import java.time.LocalDateTime;
 
 public class AgentDevicePO {
+    private Boolean conversationAttachments;
+    public Boolean getConversationAttachments(){return conversationAttachments;}
+    public void setConversationAttachments(Boolean value){conversationAttachments=value;}
     private Long id;
     private Long enrollmentId;
     private String deviceCode;

@@ -58,6 +58,7 @@ public class AgentEventServiceImpl implements AgentEventService {
         LocalDateTime now = LocalDateTime.now();
         switch (type) {
             case REGISTER:
+                deviceMapper.attachmentCapability(deviceId,payload.path("capabilities").isArray() && java.util.stream.StreamSupport.stream(payload.path("capabilities").spliterator(),false).anyMatch(v -> "CONVERSATION_ATTACHMENTS_V1".equals(v.asText())));
                 deviceMapper.updateRegistration(deviceId,text(payload,"deviceName",128),text(payload,"agentVersion",64),
                         text(payload,"osName",128),optionalText(payload,"osVersion",128),
                         optionalText(payload,"isolationMode",32)==null ? "UNKNOWN" : optionalText(payload,"isolationMode",32),now);

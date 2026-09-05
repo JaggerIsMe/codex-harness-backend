@@ -34,6 +34,10 @@ mvn spring-boot:run
 
 服务默认监听 `http://localhost:9010`。管理员创建成功后，应关闭 `HARNESS_BOOTSTRAP_ADMIN_ENABLED` 并清除环境中的管理员明文密码；已有同名管理员不会被覆盖。
 
+## Conversation Artifact 文件交付
+
+支持 Agent 交付文件上传、会话文件卡片、历史下载和失败重试。升级前执行 [产物迁移](src/main/resources/db/migration-conversation-artifacts.sql)，并持久化 harness.artifacts.storage-dir。完整协议、接口、限制和验收说明见 [Conversation Artifact 方案](../../docs/conversation-artifacts.md)。产物 Agent 接口使用 Device Token，用户列表、下载与重试使用 JWT。
+
 ## 已实现接口
 
 - `POST /api/v1/auth/login`

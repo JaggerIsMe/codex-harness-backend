@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS `sys_user` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
     `username` VARCHAR(64) NOT NULL COMMENT 'Login name',
     `password_hash` VARCHAR(100) NOT NULL COMMENT 'BCrypt password hash',
-    `token_version` BIGINT NOT NULL DEFAULT 0,
+    `token_version` BIGINT UNSIGNED NOT NULL DEFAULT 0,
     `must_change_password` BOOLEAN NOT NULL DEFAULT TRUE,
     `password_changed_at` DATETIME(3) NULL,
     `display_name` VARCHAR(128) NOT NULL COMMENT 'Display name',
@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS `agent_enrollment` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='One-time device enrollments';
 
 CREATE TABLE IF NOT EXISTS `agent_device` (
+    `conversation_attachments` TINYINT NOT NULL DEFAULT 0,
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
     `enrollment_id` BIGINT UNSIGNED NULL COMMENT 'Enrollment used to register this device',
     `device_code` VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'Public stable device identifier',
@@ -131,7 +132,7 @@ CREATE TABLE IF NOT EXISTS `agent_event_message` (
     `device_id` BIGINT UNSIGNED NOT NULL COMMENT 'Source device',
     `message_id` CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'Protocol message UUID',
     `event_type` VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'Agent event type',
-    `agent_timestamp` BIGINT NOT NULL COMMENT 'Agent supplied Unix timestamp in milliseconds',
+    `agent_timestamp` BIGINT UNSIGNED NOT NULL COMMENT 'Agent supplied Unix timestamp in milliseconds',
     `duplicate_count` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Number of duplicate deliveries observed',
     `last_seen_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT 'Most recent delivery time',
     `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -226,6 +227,10 @@ CREATE TABLE IF NOT EXISTS `conversation` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Durable Codex conversations';
 
 CREATE TABLE IF NOT EXISTS `conversation_turn` (
+    `client_request_id` VARCHAR(64) NULL,
+    `request_hash` CHAR(64) NULL,
+    `preparation_phase` VARCHAR(32) NULL,
+    UNIQUE KEY uk_turn_client_request (conversation_id,client_request_id),
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
     `conversation_id` BIGINT UNSIGNED NOT NULL COMMENT 'Owning conversation',
     `codex_turn_id` VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NULL COMMENT 'Remote Codex turn identifier',
@@ -373,3 +378,39 @@ SELECT r.id,p.id FROM sys_role r CROSS JOIN sys_permission p WHERE r.role_code='
 INSERT IGNORE INTO sys_role_permission(role_id,permission_id)
 SELECT r.id,p.id FROM sys_role r CROSS JOIN sys_permission p WHERE r.role_code='USER'
 AND p.permission_code IN ('workspace:use','project:create','project:read','conversation:create','conversation:read','turn:start','turn:interrupt','approval:decide');
+
+-- Conversation attachments
+CREATE TABLE IF NOT EXISTS conversation_attachment (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ user_id BIGINT UNSIGNED NOT NULL, project_id BIGINT UNSIGNED NOT NULL, conversation_id BIGINT UNSIGNED NOT NULL,
+ file_name VARCHAR(255) NOT NULL, storage_key VARCHAR(64) NOT NULL,
+ media_type VARCHAR(128) NOT NULL, size_bytes BIGINT UNSIGNED NOT NULL, sha256 CHAR(64) NOT NULL,
+ status VARCHAR(16) NOT NULL DEFAULT 'PENDING', created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ UNIQUE KEY uk_attachment_storage (storage_key), KEY idx_attachment_pending (conversation_id,status),
+ KEY idx_attachment_cleanup (status,created_at),
+ CONSTRAINT fk_attachment_conversation FOREIGN KEY (conversation_id) REFERENCES conversation(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS conversation_message_attachment (
+ message_id BIGINT UNSIGNED NOT NULL, attachment_id BIGINT UNSIGNED NOT NULL, position INT NOT NULL,
+ PRIMARY KEY(message_id,attachment_id), UNIQUE KEY uk_message_attachment_position(message_id,position),
+ CONSTRAINT fk_ma_message FOREIGN KEY(message_id) REFERENCES conversation_message(id),
+ CONSTRAINT fk_ma_attachment FOREIGN KEY(attachment_id) REFERENCES conversation_attachment(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Apply to an existing database before starting the upgraded Server.
+CREATE TABLE IF NOT EXISTS conversation_artifact (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ user_id BIGINT UNSIGNED NOT NULL, project_id BIGINT UNSIGNED NOT NULL,
+ conversation_id BIGINT UNSIGNED NOT NULL, turn_id BIGINT UNSIGNED NOT NULL, device_id BIGINT UNSIGNED NOT NULL,
+ artifact_key VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ file_name VARCHAR(255) NOT NULL, storage_key VARCHAR(64) NOT NULL,
+ media_type VARCHAR(128) NOT NULL, size_bytes BIGINT UNSIGNED NOT NULL, sha256 CHAR(64) NOT NULL,
+ status VARCHAR(16) NOT NULL DEFAULT 'UPLOADING', error_message VARCHAR(255) NULL,
+ created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ UNIQUE KEY uk_artifact_turn_key (turn_id,artifact_key),
+ UNIQUE KEY uk_artifact_storage (storage_key),
+ KEY idx_artifact_conversation (conversation_id,id), KEY idx_artifact_recovery (status,updated_at),
+ CONSTRAINT fk_artifact_conversation FOREIGN KEY (conversation_id) REFERENCES conversation(id),
+ CONSTRAINT fk_artifact_turn FOREIGN KEY (turn_id) REFERENCES conversation_turn(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

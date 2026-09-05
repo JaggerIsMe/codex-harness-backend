@@ -36,6 +36,7 @@ import java.util.stream.Collectors;
 @Service
 public class ConversationServiceImpl implements ConversationService {
     private final ConversationMapper conversationMapper;
+    private final com.myharness.codex.service.ConversationAttachmentService attachments;
     private final AgentDeviceMapper deviceMapper;
     private final AgentCommandGateway gateway;
     private final TransactionTemplate transactions;
@@ -48,12 +49,12 @@ public class ConversationServiceImpl implements ConversationService {
     public ConversationServiceImpl(ConversationMapper conversationMapper,AgentDeviceMapper deviceMapper,
                                    AgentCommandGateway gateway,TransactionTemplate transactions,
                                    ApprovalMapper approvalMapper,ObjectMapper objectMapper,ProjectMapper projectMapper,ConversationMessageStream streams,
-                                   com.myharness.codex.security.AuthorizationService access) {
+                                   com.myharness.codex.security.AuthorizationService access, com.myharness.codex.service.ConversationAttachmentService attachments) {
         this.conversationMapper=conversationMapper; this.deviceMapper=deviceMapper; this.gateway=gateway; this.transactions=transactions;
         this.approvalMapper=approvalMapper; this.objectMapper=objectMapper;
         this.projectMapper=projectMapper;
         this.streams=streams;
-        this.access=access;
+        this.access=access; this.attachments=attachments;
     }
 
     @Override public ConversationVO createConversation(Long projectId,CreateConversationDTO dto,Long operatorId) {
@@ -85,25 +86,47 @@ public class ConversationServiceImpl implements ConversationService {
         requireActiveProject(projectId,operatorId);
         ConversationPO conversation=requireOwned(projectId,conversationId,operatorId);
         if (conversation.getCodexThreadId()==null) throw new BusinessException(ErrorCode.CONFLICT,"Agent 尚未完成会话初始化");
-        requireOnline(conversation.getDeviceId());
+        if ((dto.getMessage()==null || dto.getMessage().isBlank()) && dto.getAttachmentIds().isEmpty())
+            throw new BusinessException(ErrorCode.INVALID_REQUEST,"消息和附件不能同时为空");
+        String fingerprint;
+        try {fingerprint=com.myharness.codex.security.SecureDigests.sha256(objectMapper.writeValueAsString(dto));}
+        catch (com.fasterxml.jackson.core.JsonProcessingException e) {throw new IllegalArgumentException("Invalid Turn input",e);}
+        final String requestHash=fingerprint;
+        java.util.concurrent.atomic.AtomicBoolean created=new java.util.concurrent.atomic.AtomicBoolean();
         final ConversationTurnPO turn;
         try {
             turn=transactions.execute(status -> {
                 ConversationPO locked=conversationMapper.lockConversation(conversationId);
+                if(dto.getClientRequestId()!=null) {
+                    ConversationTurnPO previous=conversationMapper.byClientRequest(conversationId,dto.getClientRequestId());
+                    if(previous!=null) {
+                        if(!requestHash.equals(previous.getRequestHash())) throw new BusinessException(ErrorCode.CONFLICT,"发送标识已用于不同内容");
+                        return previous;
+                    }
+                }
+                AgentDevicePO online=requireOnline(conversation.getDeviceId());
+                if(!dto.getAttachmentIds().isEmpty() && !Boolean.TRUE.equals(online.getConversationAttachments()))
+                    throw new BusinessException(ErrorCode.CONFLICT,"请升级 Agent 以支持会话附件");
                 ConversationTurnPO value=new ConversationTurnPO(); value.setConversationId(conversationId); value.setStatus("CREATED");
+                value.setClientRequestId(dto.getClientRequestId()); value.setRequestHash(requestHash);
+                value.setPreparationPhase(dto.getAttachmentIds().isEmpty() ? null : "DOWNLOADING");
                 conversationMapper.insertTurn(value);
                 long sequence=conversationMapper.nextSequence(conversationId);
-                conversationMapper.insertMessage(conversationId,value.getId(),sequence,"USER","TEXT",dto.getMessage());
+                conversationMapper.insertMessage(conversationId,value.getId(),sequence,"USER","TEXT",dto.getMessage()==null ? "" : dto.getMessage());
+                attachments.bind(locked,value.getId(),dto.getAttachmentIds());
+                created.set(true);
                 return value;
             });
         } catch (DuplicateKeyException exception) { throw new BusinessException(ErrorCode.CONFLICT,"当前会话已有活动任务"); }
+        if(!created.get()) return new TurnVO(turn);
         Map<String,Object> payload=new LinkedHashMap<>();
         payload.put("conversationId",String.valueOf(conversationId)); payload.put("turnId",String.valueOf(turn.getId()));
         payload.put("projectId",String.valueOf(conversation.getProjectId()));
         payload.put("workspaceName",conversation.getWorkspaceName());
         payload.put("codexThreadId",conversation.getCodexThreadId());
         payload.put("recreateUnstartedThread",conversationMapper.canRecreateUnstartedThread(conversationId,turn.getId()));
-        payload.put("message",dto.getMessage()); payload.put("model",trimOr(dto.getModel(),null));
+        if(!dto.getAttachmentIds().isEmpty()) payload.put("attachments",attachments.forTurn(turn.getId()));
+        payload.put("message",dto.getMessage()==null ? "" : dto.getMessage()); payload.put("model",trimOr(dto.getModel(),null));
         payload.put("reasoningEffort",trimOr(dto.getReasoningEffort(),null));
         try { gateway.send(conversation.getDeviceCode(),new AgentCommand("START_TURN",String.valueOf(turn.getId()),payload)); }
         catch (RuntimeException exception) {
@@ -117,9 +140,12 @@ public class ConversationServiceImpl implements ConversationService {
         access.requirePermission(operatorId,"turn:interrupt");
         ConversationPO conversation=requireOwned(projectId,conversationId,operatorId); requireOnline(conversation.getDeviceId());
         ConversationTurnPO turn=conversationMapper.selectTurn(turnId);
-        if (turn==null || !conversationId.equals(turn.getConversationId()) || !("RUNNING".equals(turn.getStatus()) || "WAITING_APPROVAL".equals(turn.getStatus())))
+        if (turn==null || !conversationId.equals(turn.getConversationId()) || !("CREATED".equals(turn.getStatus()) || "RUNNING".equals(turn.getStatus()) || "WAITING_APPROVAL".equals(turn.getStatus())))
             throw new BusinessException(ErrorCode.CONFLICT,"任务当前不可中断");
         Map<String,Object> payload=new LinkedHashMap<>(); payload.put("conversationId",String.valueOf(conversationId)); payload.put("turnId",String.valueOf(turnId));
+        if("CREATED".equals(turn.getStatus())) {
+            conversationMapper.finishTurn(turnId,conversationId,conversation.getDeviceId(),"INTERRUPTED",null,"用户取消文件准备",LocalDateTime.now());
+        }
         gateway.send(conversation.getDeviceCode(),new AgentCommand("INTERRUPT_TURN",String.valueOf(turnId),payload));
     }
 
@@ -138,13 +164,15 @@ public class ConversationServiceImpl implements ConversationService {
 
     @Override public List<ConversationMessageVO> getMessages(Long projectId,Long conversationId,Long operatorId) {
         requireOwned(projectId,conversationId,operatorId);
-        return streams.state(conversationId,0,200,null,-1).getMessages();
+        List<ConversationMessageVO> messages=streams.state(conversationId,0,200,null,-1).getMessages();
+        attachments.enrich(messages); return messages;
     }
 
     @Override public MessageStateVO getMessageState(Long projectId,Long conversationId,Long operatorId,long before,int limit,Long turnId,long after) {
         requireOwned(projectId,conversationId,operatorId);
         if(before<0 || after < -1 || limit<1 || limit>200) throw new IllegalArgumentException("Invalid message cursor or page size");
-        return streams.state(conversationId,before,limit,turnId,after);
+        MessageStateVO result=streams.state(conversationId,before,limit,turnId,after);
+        attachments.enrich(result.getMessages()); return result;
     }
 
     @Override public List<ApprovalVO> getApprovals(Long projectId,Long conversationId,Long operatorId) {

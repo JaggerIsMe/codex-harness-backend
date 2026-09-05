@@ -36,6 +36,16 @@ log:
     level: debug
 
 harness:
+  artifacts:
+    storage-dir: ${project.folder}/artifact-storage
+    max-file-bytes: 20971520
+    max-files: 5
+    max-total-bytes: 52428800
+  attachments:
+    storage-dir: ${project.folder}/attachment-storage
+    max-file-bytes: 20971520
+    max-files: 5
+    max-total-bytes: 52428800
   message-stream:
     replay-limit: 2000
     retention-seconds: 3600
@@ -56,4 +66,4 @@ harness:
     offline-scan-interval-seconds: 15
     command-timeout-seconds: 35
     public-base-url: http://localhost:${server.port}
-    skill-storage-dir: D:/a_Coder/WorkSpace/webSer/myApps/backend-harness/skill-storage
+    skill-storage-dir: ${project.folder}/skill-storage
