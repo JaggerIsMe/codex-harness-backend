@@ -21,7 +21,7 @@ public interface ConversationMapper {
             "AND JSON_UNQUOTE(JSON_EXTRACT(old.expert_runtime,'$.runtimeKey'))=#{key})) " +
             "AND EXISTS(SELECT 1 FROM conversation_turn t WHERE t.id=#{turnId} AND t.conversation_id=#{id} AND t.status='CREATED' " +
             "AND JSON_UNQUOTE(JSON_EXTRACT(t.expert_runtime,'$.runtimeKey'))=#{key} " +
-            "AND JSON_EXTRACT(t.expert_runtime,'$.schemaVersion') IN (2,3))")
+            "AND JSON_EXTRACT(t.expert_runtime,'$.schemaVersion') IN (2,3,4))")
     int replaceExpertThread(@Param("id") Long id,@Param("deviceId") Long deviceId,@Param("turnId") Long turnId,
             @Param("previous") String previous,@Param("next") String next,@Param("key") String key,@Param("now") LocalDateTime now);
 
@@ -30,7 +30,7 @@ public interface ConversationMapper {
             "AND (expert_runtime_key=#{previous} OR (expert_runtime_key IS NULL AND #{previous} IS NULL)) " +
             "AND EXISTS(SELECT 1 FROM conversation_turn t WHERE t.id=#{turnId} AND t.conversation_id=#{id} AND t.status='CREATED' " +
             "AND JSON_UNQUOTE(JSON_EXTRACT(t.expert_runtime,'$.runtimeKey'))=#{next} " +
-            "AND JSON_EXTRACT(t.expert_runtime,'$.schemaVersion')=3 " +
+            "AND JSON_EXTRACT(t.expert_runtime,'$.schemaVersion') IN (3,4) " +
             "AND JSON_UNQUOTE(JSON_EXTRACT(t.expert_runtime,'$.compatibleUpgrade'))='true')")
     int updateCompatibleExpertRuntime(@Param("id") Long id,@Param("deviceId") Long deviceId,@Param("turnId") Long turnId,
             @Param("threadId") String threadId,@Param("previous") String previous,@Param("next") String next,

@@ -417,7 +417,8 @@ CREATE TABLE IF NOT EXISTS conversation_artifact (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Apply once after the existing RBAC, attachments and artifacts migrations.
-ALTER TABLE agent_device ADD COLUMN project_experts TINYINT NOT NULL DEFAULT 0;
+ALTER TABLE agent_device ADD COLUMN project_experts TINYINT NOT NULL DEFAULT 0,
+    ADD COLUMN expert_mcp TINYINT NOT NULL DEFAULT 0;
 ALTER TABLE codex_project ADD COLUMN expert_revision BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE conversation ADD COLUMN selected_expert_id BIGINT UNSIGNED NULL,
     ADD COLUMN selected_expert_version_id BIGINT UNSIGNED NULL,
@@ -425,10 +426,34 @@ ALTER TABLE conversation ADD COLUMN selected_expert_id BIGINT UNSIGNED NULL,
 ALTER TABLE conversation_turn ADD COLUMN expert_version_id BIGINT UNSIGNED NULL,
     ADD COLUMN expert_name VARCHAR(128) NULL, ADD COLUMN expert_runtime MEDIUMTEXT NULL;
 
+CREATE TABLE mcp_configuration (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ server_code VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ name VARCHAR(128) NOT NULL, description VARCHAR(2000) NOT NULL DEFAULT '',
+ status VARCHAR(16) NOT NULL DEFAULT 'ENABLED', current_version_id BIGINT UNSIGNED NULL,
+ revision BIGINT NOT NULL DEFAULT 0, created_by BIGINT UNSIGNED NOT NULL,
+ created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+ updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+ UNIQUE KEY uk_mcp_configuration_code(server_code),
+ CONSTRAINT fk_mcp_configuration_creator FOREIGN KEY(created_by) REFERENCES sys_user(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE mcp_configuration_version (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ mcp_configuration_id BIGINT UNSIGNED NOT NULL, version_no BIGINT NOT NULL,
+ server_code VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ name VARCHAR(128) NOT NULL, description VARCHAR(2000) NOT NULL DEFAULT '',
+ runtime_spec MEDIUMTEXT NOT NULL, config_digest CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE', created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+ UNIQUE KEY uk_mcp_configuration_version(mcp_configuration_id,version_no),
+ CONSTRAINT fk_mcp_version_configuration FOREIGN KEY(mcp_configuration_id) REFERENCES mcp_configuration(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE mcp_configuration ADD CONSTRAINT fk_mcp_current_version
+ FOREIGN KEY(current_version_id) REFERENCES mcp_configuration_version(id);
+
 CREATE TABLE expert (
  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
  name VARCHAR(128) NOT NULL, description VARCHAR(2000) NOT NULL DEFAULT '',
- system_prompt MEDIUMTEXT NOT NULL, skill_version_ids TEXT NOT NULL,
+ system_prompt MEDIUMTEXT NOT NULL, skill_version_ids TEXT NOT NULL, mcp_version_ids TEXT NOT NULL,
  compatible_upgrade TINYINT NOT NULL DEFAULT 0,
  status VARCHAR(16) NOT NULL DEFAULT 'DRAFT', published_version_id BIGINT UNSIGNED NULL,
  revision BIGINT NOT NULL DEFAULT 0, created_by BIGINT UNSIGNED NOT NULL,
@@ -439,7 +464,7 @@ CREATE TABLE expert (
 CREATE TABLE expert_version (
  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, expert_id BIGINT UNSIGNED NOT NULL,
  version_no BIGINT NOT NULL, name VARCHAR(128) NOT NULL, description VARCHAR(2000) NOT NULL,
- system_prompt MEDIUMTEXT NOT NULL, skill_version_ids TEXT NOT NULL,
+ system_prompt MEDIUMTEXT NOT NULL, skill_version_ids TEXT NOT NULL, mcp_version_ids TEXT NOT NULL,
  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
  UNIQUE KEY uk_expert_version(expert_id,version_no),
  CONSTRAINT fk_expert_version FOREIGN KEY(expert_id) REFERENCES expert(id)
@@ -465,8 +490,9 @@ CREATE TABLE user_expert_assignment (
 ALTER TABLE conversation ADD CONSTRAINT fk_conversation_expert_version
  FOREIGN KEY(selected_expert_version_id) REFERENCES expert_version(id);
 INSERT IGNORE INTO sys_permission(permission_code,permission_name) VALUES
- ('expert:manage','专家管理与发布'),('expert:read','专家市场'),('expert:use','项目专家使用');
+ ('expert:manage','专家管理与发布'),('expert:read','专家市场'),('expert:use','项目专家使用'),
+ ('mcp:manage','MCP 配置管理');
 INSERT IGNORE INTO sys_role_permission(role_id,permission_id)
  SELECT r.id,p.id FROM sys_role r CROSS JOIN sys_permission p
- WHERE (r.role_code='SYS_ADMIN' AND p.permission_code IN ('expert:manage','expert:read','expert:use'))
+ WHERE (r.role_code='SYS_ADMIN' AND p.permission_code IN ('expert:manage','expert:read','expert:use','mcp:manage'))
  OR (r.role_code='USER' AND p.permission_code IN ('expert:read','expert:use'));

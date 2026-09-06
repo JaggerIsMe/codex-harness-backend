@@ -26,12 +26,13 @@ public class ExpertService {
     private final TransactionTemplate tx;
     private final ObjectMapper json;
     private final AgentProperties properties;
+    private final McpConfigurationService mcp;
 
     public ExpertService(ExpertMapper mapper, ProjectMapper projects, ConversationMapper conversations,
                          SkillMapper skills, AgentDeviceMapper devices, RbacMapper rbac, AuthorizationService access,
-                         TransactionTemplate tx, ObjectMapper json, AgentProperties properties) {
+                         TransactionTemplate tx, ObjectMapper json, AgentProperties properties,McpConfigurationService mcp) {
         this.mapper=mapper; this.projects=projects; this.conversations=conversations; this.skills=skills;
-        this.devices=devices; this.rbac=rbac; this.access=access; this.tx=tx; this.json=json; this.properties=properties;
+        this.devices=devices; this.rbac=rbac; this.access=access; this.tx=tx; this.json=json; this.properties=properties;this.mcp=mcp;
     }
 
     public List<ExpertVO> list(String keyword, boolean admin, Long user) {
@@ -40,17 +41,19 @@ public class ExpertService {
     }
     public ExpertVO save(Long id, ExpertDraftDTO input, Long user) {
         access.requirePermission(user,"expert:manage");
-        if(input.getMcpBindings()==null || input.getKnowledgeBindings()==null || !input.getMcpBindings().isEmpty() || !input.getKnowledgeBindings().isEmpty())
-            throw conflict("MCP 和知识库暂未接入");
+        if(input.getMcpBindings()==null || input.getKnowledgeBindings()==null || !input.getKnowledgeBindings().isEmpty())
+            throw conflict("知识库暂未接入");
         if(input.getName()==null || input.getName().isBlank() || input.getSystemPrompt()==null || input.getSystemPrompt().isBlank())
             throw conflict("专家名称和系统提示词不能为空");
         validateSkillIds(input.getSkillVersionIds());
+        mcp.runtimes(input.getMcpBindings());
         return tx.execute(s -> {
             ExpertPO e=id==null ? new ExpertPO() : required(mapper.lock(id));
             if(id!=null) revision(e.getRevision(),input.getRevision());
             boolean statusChanged=id!=null && !"DRAFT".equals(e.getStatus());
             e.setName(input.getName().trim()); e.setDescription(trim(input.getDescription()));
             e.setSystemPrompt(input.getSystemPrompt().trim()); e.setSkillVersionIds(write(input.getSkillVersionIds()));
+            e.setMcpVersionIds(write(input.getMcpBindings()));
             if(id==null) {e.setCreatedBy(user); mapper.insert(e);} else {
                 if(statusChanged) for(Long project:mapper.boundProjects(id)) {mapper.lockProject(project); mapper.bumpProject(project);}
                 e.setStatus("DRAFT"); mapper.draft(e);
@@ -63,11 +66,13 @@ public class ExpertService {
         return tx.execute(s -> {
             ExpertPO e=required(mapper.lock(id)); revision(e.getRevision(),revision);
             validateSkillIds(ids(e.getSkillVersionIds()));
+            mcp.runtimes(ids(e.getMcpVersionIds()));
             if(!"PUBLISHED".equals(e.getStatus())) {
                 for(Long project:mapper.boundProjects(id)) {mapper.lockProject(project); mapper.bumpProject(project);}
             }
             ExpertVersionPO v=new ExpertVersionPO(); v.setExpertId(id); v.setVersionNo(mapper.nextVersion(id));
             v.setName(e.getName()); v.setDescription(e.getDescription()); v.setSystemPrompt(e.getSystemPrompt()); v.setSkillVersionIds(e.getSkillVersionIds());
+            v.setMcpVersionIds(e.getMcpVersionIds());
             v.setCompatibleUpgrade(v.getVersionNo()>1 && compatibleUpgrade);
             mapper.publish(v); mapper.published(id,v.getId()); return view(mapper.get(id),true);
         });
@@ -84,7 +89,7 @@ public class ExpertService {
         access.requirePermission(user,"expert:read");
         ExpertPO e=required(mapper.get(id));
         if(!access.hasPermission(user,"expert:manage") && (!"PUBLISHED".equals(e.getStatus()) || rbac.expertAssigned(user,id)==0)) throw missing();
-        return mapper.versions(id).stream().map(v -> new ExpertVersionVO(v.getId(),v.getExpertId(),v.getVersionNo(),v.getName(),v.getDescription(),ids(v.getSkillVersionIds()),Boolean.TRUE.equals(v.getCompatibleUpgrade()))).toList();
+        return mapper.versions(id).stream().map(v -> new ExpertVersionVO(v.getId(),v.getExpertId(),v.getVersionNo(),v.getName(),v.getDescription(),ids(v.getSkillVersionIds()),ids(v.getMcpVersionIds()),Boolean.TRUE.equals(v.getCompatibleUpgrade()))).toList();
     }
     public ProjectExpertsVO projectExperts(Long projectId, Long user) {
         ProjectPO p=project(projectId,user);
@@ -108,7 +113,7 @@ public class ExpertService {
             List<ProjectExpertPO> bindings=new ArrayList<>(mapper.bindings(projectId));
             bindings.removeIf(b -> b.getExpertId().equals(v.getExpertId()));
             ProjectExpertPO b=new ProjectExpertPO(); b.setProjectId(projectId); b.setExpertId(v.getExpertId()); b.setExpertVersionId(v.getId());
-            bindings.add(b); skillUnion(p,bindings); mapper.bind(b);
+            bindings.add(b); skillUnion(p,bindings); mcpUnion(p,List.of(b)); mapper.bind(b);
             mapper.upgradeCompatibleConversations(projectId,v.getExpertId(),v.getId());
             mapper.bumpProject(projectId);
         });
@@ -159,16 +164,20 @@ public class ExpertService {
         result.setCompatibleUpgrade(Boolean.TRUE.equals(expertVersion.getCompatibleUpgrade()));
         result.setName(expertVersion.getName()); result.setSystemPrompt(expertVersion.getSystemPrompt());
         List<SkillVersionPO> selectedSkills=skillUnion(p,List.of(pinned));
+        List<McpRuntimeDTO> selectedMcp=mcpUnion(p,List.of(pinned));
         AgentDevicePO d=devices.selectById(c.getDeviceId());
         if(d==null || !Boolean.TRUE.equals(d.getProjectExperts())) throw conflict("请升级设备 Agent 以支持项目专家");
+        if(!selectedMcp.isEmpty() && !Boolean.TRUE.equals(d.getExpertMcp())) throw conflict("请升级设备 Agent 以支持专家 MCP");
         result.setSkills(selectedSkills.stream().map(v -> {
             ExpertRuntimeSkillDTO skill=new ExpertRuntimeSkillDTO(); skill.setSkillId(v.getSkillId()); skill.setVersionId(v.getId());
             skill.setName(skills.selectSkill(v.getSkillId()).getSkillName()); skill.setVersion(v.getVersion()); skill.setSha256(v.getSha256());
             skill.setDownloadUrl(properties.getPublicBaseUrl().replaceAll("/+$", "")+"/api/v1/agent/skill-versions/"+v.getId()+"/download"); return skill;
         }).toList());
-        result.setRuntimeKey(com.myharness.codex.security.SecureDigests.sha256("expert-runtime-v3:"+c.getId()+":"
+        result.setMcpServers(selectedMcp);
+        result.setRuntimeKey(com.myharness.codex.security.SecureDigests.sha256("expert-runtime-v4:"+c.getId()+":"
                 +result.getExpertVersionId()+":"
-                +selectedSkills.stream().map(v->v.getId()+":"+v.getSha256()).sorted().collect(java.util.stream.Collectors.joining(","))));
+                +selectedSkills.stream().map(v->v.getId()+":"+v.getSha256()).sorted().collect(java.util.stream.Collectors.joining(","))+":"
+                +selectedMcp.stream().map(v->v.getConfigurationVersionId()+":"+v.getConfigDigest()).sorted().collect(java.util.stream.Collectors.joining(","))));
         return result;
     }
     public String write(Object value) { try {return json.writeValueAsString(value);} catch(Exception e) {throw new IllegalStateException("Invalid expert configuration",e);} }
@@ -181,7 +190,7 @@ public class ExpertService {
         String reason=b==null ? "该专家已从项目移除" : accessUnavailable(b,p,c.getUserId());
         if(reason==null && v!=null) {
             ProjectExpertPO pinned=new ProjectExpertPO();pinned.setProjectId(p.getId());pinned.setExpertId(c.getSelectedExpertId());pinned.setExpertVersionId(v.getId());pinned.setStatus(b.getStatus());
-            try {skillUnion(p,List.of(pinned));} catch(BusinessException exception) {reason=exception.getMessage();}
+            try {skillUnion(p,List.of(pinned));mcpUnion(p,List.of(pinned));} catch(BusinessException exception) {reason=exception.getMessage();}
         }
         if(reason==null && (v==null || !Objects.equals(v.getExpertId(),c.getSelectedExpertId()))) reason="会话绑定的专家版本不存在";
         return new ExpertSelectionVO(c.getSelectedExpertId(),c.getSelectedExpertVersionId(),v==null ? (e==null ? "不可用专家" : e.getName()) : v.getName(),c.getExpertSelectionRevision(),revision,reason==null,reason);
@@ -189,7 +198,7 @@ public class ExpertService {
     private String unavailable(ProjectExpertPO b, ProjectPO p, Long userId) {
         String reason=accessUnavailable(b,p,userId);
         if(reason!=null) return reason;
-        try { skillUnion(p,List.of(b)); return null; } catch(BusinessException e) {return e.getMessage();}
+        try { skillUnion(p,List.of(b));mcpUnion(p,List.of(b)); return null; } catch(BusinessException e) {return e.getMessage();}
     }
     private String accessUnavailable(ProjectExpertPO b, ProjectPO p, Long userId) {
         if(!"PUBLISHED".equals(b.getStatus())) return "专家已下架或禁用";
@@ -215,6 +224,18 @@ public class ExpertService {
         }
         return new ArrayList<>(union.values());
     }
+    private List<McpRuntimeDTO> mcpUnion(ProjectPO p,List<ProjectExpertPO> bindings) {
+        if(p==null) throw missing();List<McpRuntimeDTO> result=new ArrayList<>();Set<Long> versions=new LinkedHashSet<>();
+        for(ProjectExpertPO binding:bindings) {
+            ExpertVersionPO version=mapper.version(binding.getExpertVersionId());
+            if(version==null) throw conflict("项目绑定的专家版本不存在");
+            versions.addAll(ids(version.getMcpVersionIds()));
+        }
+        result.addAll(mcp.runtimes(new ArrayList<>(versions)));
+        AgentDevicePO device=devices.selectById(p.getDeviceId());
+        if(!result.isEmpty() && (device==null || !Boolean.TRUE.equals(device.getExpertMcp()))) throw conflict("请升级设备 Agent 以支持专家 MCP");
+        return result;
+    }
     private void validateSkillIds(List<Long> ids) {
         if(ids==null || ids.size()>30 || new HashSet<>(ids).size()!=ids.size()) throw conflict("Skill 版本列表不正确");
         Set<Long> names=new HashSet<>();
@@ -237,8 +258,8 @@ public class ExpertService {
         if(mapper.activeTurns(id)>0) throw conflict("项目中有运行中或等待审批的任务，请结束后再修改项目专家");
         if(mapper.pendingSkillChanges(id)>0) throw conflict("项目 Skills 正在变更，请完成后再修改项目专家");
     }
-    private ExpertVO view(ExpertPO e, boolean admin) {return new ExpertVO(e.getId(),e.getName(),e.getDescription(),e.getStatus(),e.getPublishedVersionId(),e.getRevision(),admin?e.getSystemPrompt():null,admin?ids(e.getSkillVersionIds()):List.of());}
-    private List<Long> ids(String value) {try {return json.readValue(value,new TypeReference<List<Long>>(){});} catch(Exception e) {throw new IllegalStateException("Invalid expert Skill list",e);} }
+    private ExpertVO view(ExpertPO e, boolean admin) {return new ExpertVO(e.getId(),e.getName(),e.getDescription(),e.getStatus(),e.getPublishedVersionId(),e.getRevision(),admin?e.getSystemPrompt():null,admin?ids(e.getSkillVersionIds()):List.of(),admin?ids(e.getMcpVersionIds()):List.of());}
+    private List<Long> ids(String value) {if(value==null || value.isBlank()) return List.of();try {return json.readValue(value,new TypeReference<List<Long>>(){});} catch(Exception e) {throw new IllegalStateException("Invalid expert capability list",e);} }
     private void revision(Long actual, Long expected) {if(!Objects.equals(actual,expected)) throw conflict("配置已变更，请刷新后重试");}
     private ExpertPO required(ExpertPO e) {if(e==null) throw missing(); return e;}
     private BusinessException conflict(String message) {return new BusinessException(ErrorCode.CONFLICT,message);}

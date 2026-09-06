@@ -30,8 +30,10 @@ class ExpertDatabaseTest {
         var tx=new TransactionTemplate(new DataSourceTransactionManager(ds));
         var mapper=session.getMapper(ExpertMapper.class);var conversations=session.getMapper(ConversationMapper.class);var skills=session.getMapper(SkillMapper.class);var rbac=session.getMapper(RbacMapper.class);
         var properties=new AgentProperties();properties.setPublicBaseUrl("http://localhost:9010");
+        var mcp=org.mockito.Mockito.mock(McpConfigurationService.class);
+        org.mockito.Mockito.when(mcp.runtimes(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of());
         var service=new ExpertService(mapper,session.getMapper(ProjectMapper.class),conversations,skills,session.getMapper(AgentDeviceMapper.class),rbac,
-                new AuthorizationService(rbac,session.getMapper(SysUserMapper.class)),tx,new ObjectMapper(),properties);
+                new AuthorizationService(rbac,session.getMapper(SysUserMapper.class)),tx,new ObjectMapper(),properties,mcp);
         tx.executeWithoutResult(status -> {
             status.setRollbackOnly();
             jdbc.update("INSERT INTO sys_user(id,username,password_hash,display_name,must_change_password) VALUES(901,'expert-test-admin','unused','Test',0),(902,'expert-test-other','unused','Other',0)");

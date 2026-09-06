@@ -28,9 +28,10 @@ class UserSecurityTest {
     @Autowired RbacMapper rbac;
     @Autowired JwtTokenService jwt;
     @Autowired com.myharness.codex.service.ExpertService experts;
+    @Autowired com.myharness.codex.service.McpConfigurationService mcp;
     MockMvc mvc;SysUserPO user;String token;
     @BeforeEach void setup(){
-        reset(users,rbac,experts);user=new SysUserPO();user.setId(3L);user.setUsername("normal");user.setDisplayName("Normal");user.setStatus("ENABLED");
+        reset(users,rbac,experts,mcp);user=new SysUserPO();user.setId(3L);user.setUsername("normal");user.setDisplayName("Normal");user.setStatus("ENABLED");
         when(users.selectById(3L)).thenReturn(user);
         when(rbac.permissions(3L)).thenReturn(List.of("workspace:use","project:read"));
         token=jwt.createToken(3L,"normal",0);
@@ -38,8 +39,19 @@ class UserSecurityTest {
     }
     @Test void normalUserCanEnterWorkspaceButNotManagement() throws Exception {
         mvc.perform(get("/api/v1/projects").servletPath("/api/v1/projects").header("Authorization","Bearer "+token)).andExpect(status().isOk());
-        for(String path:List.of("/api/v1/users","/api/v1/devices","/api/v1/skills","/api/v1/skill-deployments"))
+        for(String path:List.of("/api/v1/users","/api/v1/devices","/api/v1/skills","/api/v1/skill-deployments","/api/v1/admin/mcp-configurations"))
             mvc.perform(get(path).servletPath(path).header("Authorization","Bearer "+token)).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value(403));
+    }
+    @Test void mcpManagerCanManageAndExpertManagerCanOnlyReadSelector() throws Exception {
+        when(rbac.permissions(3L)).thenReturn(List.of("mcp:manage"));
+        String list="/api/v1/admin/mcp-configurations";
+        mvc.perform(get(list).servletPath(list).header("Authorization","Bearer "+token)).andExpect(status().isOk());
+        verify(mcp).list("","",3L);
+        String selector="/api/v1/admin/mcp-configurations/selectable-versions";
+        when(rbac.permissions(3L)).thenReturn(List.of("expert:manage"));
+        mvc.perform(get(selector).servletPath(selector).header("Authorization","Bearer "+token)).andExpect(status().isOk());
+        mvc.perform(get(list).servletPath(list).header("Authorization","Bearer "+token)).andExpect(status().isForbidden());
+        verify(mcp).selectableVersions(3L);
     }
     @Test void administratorCanManageUsers() throws Exception {
         when(rbac.permissions(3L)).thenReturn(List.of("system:user:manage"));
@@ -117,6 +129,8 @@ class UserSecurityTest {
         @Bean Endpoints endpoints(){return new Endpoints();}
         @Bean com.myharness.codex.service.ExpertService experts(){return mock(com.myharness.codex.service.ExpertService.class);}
         @Bean com.myharness.codex.controller.ExpertController expertController(com.myharness.codex.service.ExpertService experts){return new com.myharness.codex.controller.ExpertController(experts);}
+        @Bean com.myharness.codex.service.McpConfigurationService mcp(){return mock(com.myharness.codex.service.McpConfigurationService.class);}
+        @Bean com.myharness.codex.controller.McpConfigurationController mcpController(com.myharness.codex.service.McpConfigurationService mcp){return new com.myharness.codex.controller.McpConfigurationController(mcp);}
     }
     @RestController static class Endpoints {
         @GetMapping({"/api/v1/projects","/api/v1/users","/api/v1/devices","/api/v1/skills","/api/v1/skill-deployments","/api/v1/auth/profile"})

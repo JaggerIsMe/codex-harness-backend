@@ -8,6 +8,7 @@ public class ExpertVersionPO {
     private String description;
     private String systemPrompt;
     private String skillVersionIds;
+    private String mcpVersionIds;
     private Boolean compatibleUpgrade;
     private String status;
     public Long getId() { return id; }
@@ -24,6 +25,8 @@ public class ExpertVersionPO {
     public void setSystemPrompt(String value) { systemPrompt = value; }
     public String getSkillVersionIds() { return skillVersionIds; }
     public void setSkillVersionIds(String value) { skillVersionIds = value; }
+    public String getMcpVersionIds() { return mcpVersionIds; }
+    public void setMcpVersionIds(String value) { mcpVersionIds = value; }
     public Boolean getCompatibleUpgrade() { return compatibleUpgrade; }
     public void setCompatibleUpgrade(Boolean value) { compatibleUpgrade = value; }
     public String getStatus() { return status; }

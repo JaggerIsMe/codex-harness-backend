@@ -15,12 +15,12 @@ public interface ExpertMapper {
     List<ExpertPO> market(@Param("keyword") String keyword,@Param("userId") Long userId);
     @Select("SELECT * FROM expert WHERE id=#{id}") ExpertPO get(Long id);
     @Select("SELECT * FROM expert WHERE id=#{id} FOR UPDATE") ExpertPO lock(Long id);
-    @Insert("INSERT INTO expert(name,description,system_prompt,skill_version_ids,created_by) VALUES(#{name},#{description},#{systemPrompt},#{skillVersionIds},#{createdBy})")
+    @Insert("INSERT INTO expert(name,description,system_prompt,skill_version_ids,mcp_version_ids,created_by) VALUES(#{name},#{description},#{systemPrompt},#{skillVersionIds},#{mcpVersionIds},#{createdBy})")
     @Options(useGeneratedKeys=true,keyProperty="id") int insert(ExpertPO value);
-    @Update("UPDATE expert SET name=#{name},description=#{description},system_prompt=#{systemPrompt},skill_version_ids=#{skillVersionIds},status='DRAFT',revision=revision+1 WHERE id=#{id}")
+    @Update("UPDATE expert SET name=#{name},description=#{description},system_prompt=#{systemPrompt},skill_version_ids=#{skillVersionIds},mcp_version_ids=#{mcpVersionIds},status='DRAFT',revision=revision+1 WHERE id=#{id}")
     int draft(ExpertPO value);
     @Select("SELECT COALESCE(MAX(version_no),0)+1 FROM expert_version WHERE expert_id=#{id}") long nextVersion(Long id);
-    @Insert("INSERT INTO expert_version(expert_id,version_no,name,description,system_prompt,skill_version_ids,compatible_upgrade) VALUES(#{expertId},#{versionNo},#{name},#{description},#{systemPrompt},#{skillVersionIds},#{compatibleUpgrade})")
+    @Insert("INSERT INTO expert_version(expert_id,version_no,name,description,system_prompt,skill_version_ids,mcp_version_ids,compatible_upgrade) VALUES(#{expertId},#{versionNo},#{name},#{description},#{systemPrompt},#{skillVersionIds},#{mcpVersionIds},#{compatibleUpgrade})")
     @Options(useGeneratedKeys=true,keyProperty="id") int publish(ExpertVersionPO value);
     @Update("UPDATE expert SET published_version_id=#{versionId},status='PUBLISHED',revision=revision+1 WHERE id=#{id}")
     int published(@Param("id") Long id,@Param("versionId") Long versionId);

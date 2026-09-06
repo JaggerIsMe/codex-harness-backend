@@ -6,6 +6,9 @@ public class AgentDevicePO {
     private Boolean projectExperts;
     public Boolean getProjectExperts() {return projectExperts;}
     public void setProjectExperts(Boolean value) {projectExperts=value;}
+    private Boolean expertMcp;
+    public Boolean getExpertMcp() {return expertMcp;}
+    public void setExpertMcp(Boolean value) {expertMcp=value;}
     private Boolean conversationAttachments;
     public Boolean getConversationAttachments(){return conversationAttachments;}
     public void setConversationAttachments(Boolean value){conversationAttachments=value;}

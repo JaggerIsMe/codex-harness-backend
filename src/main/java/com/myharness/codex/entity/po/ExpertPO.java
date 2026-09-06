@@ -6,6 +6,7 @@ public class ExpertPO {
     private String description;
     private String systemPrompt;
     private String skillVersionIds;
+    private String mcpVersionIds;
     private String status;
     private Long publishedVersionId;
     private Long revision;
@@ -20,6 +21,8 @@ public class ExpertPO {
     public void setSystemPrompt(String value) { systemPrompt = value; }
     public String getSkillVersionIds() { return skillVersionIds; }
     public void setSkillVersionIds(String value) { skillVersionIds = value; }
+    public String getMcpVersionIds() { return mcpVersionIds; }
+    public void setMcpVersionIds(String value) { mcpVersionIds = value; }
     public String getStatus() { return status; }
     public void setStatus(String value) { status = value; }
     public Long getPublishedVersionId() { return publishedVersionId; }

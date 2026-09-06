@@ -16,16 +16,18 @@ import static org.mockito.Mockito.*;
 class ExpertServiceTest {
     ExpertMapper mapper; ProjectMapper projects; ConversationMapper conversations; SkillMapper skills;
     AgentDeviceMapper devices; RbacMapper rbac; AuthorizationService access; ExpertService service; ConversationPO c;
+    McpConfigurationService mcp;
     List<ProjectExpertPO> bindings; Map<Long,ExpertVersionPO> versions;
 
     @BeforeEach void setup() {
         mapper=mock(ExpertMapper.class);projects=mock(ProjectMapper.class);conversations=mock(ConversationMapper.class);
-        skills=mock(SkillMapper.class);devices=mock(AgentDeviceMapper.class);rbac=mock(RbacMapper.class);access=mock(AuthorizationService.class);
+        skills=mock(SkillMapper.class);devices=mock(AgentDeviceMapper.class);rbac=mock(RbacMapper.class);access=mock(AuthorizationService.class);mcp=mock(McpConfigurationService.class);
+        when(mcp.runtimes(anyList())).thenReturn(List.of());
         var tx=mock(TransactionTemplate.class);
         when(tx.execute(any())).thenAnswer(i -> ((TransactionCallback<?>)i.getArgument(0)).doInTransaction(mock(org.springframework.transaction.TransactionStatus.class)));
         doAnswer(i -> {((java.util.function.Consumer<org.springframework.transaction.TransactionStatus>)i.getArgument(0)).accept(mock(org.springframework.transaction.TransactionStatus.class));return null;}).when(tx).executeWithoutResult(any());
         var properties=new AgentProperties();properties.setPublicBaseUrl("http://localhost:9010");
-        service=new ExpertService(mapper,projects,conversations,skills,devices,rbac,access,tx,new ObjectMapper(),properties);
+        service=new ExpertService(mapper,projects,conversations,skills,devices,rbac,access,tx,new ObjectMapper(),properties,mcp);
         var p=new ProjectPO();p.setId(1L);p.setDeviceId(8L);p.setUserId(2L);p.setStatus("ACTIVE");
         when(projects.selectOwned(1L,2L)).thenReturn(p);when(mapper.lockProject(1L)).thenReturn(4L);
         var device=new AgentDevicePO();device.setProjectExperts(true);when(devices.selectById(8L)).thenReturn(device);
@@ -103,9 +105,23 @@ class ExpertServiceTest {
         assertThrows(BusinessException.class,()->service.bind(1L,input,2L));verify(mapper,never()).bind(any());
     }
 
-    @Test void extensionsAreReservedAndCannotBeConfigured() {
-        var input=new ExpertDraftDTO();input.setName("A");input.setSystemPrompt("B");input.setMcpBindings(List.of("server"));
+    @Test void knowledgeBindingsAreReservedAndCannotBeConfigured() {
+        var input=new ExpertDraftDTO();input.setName("A");input.setSystemPrompt("B");input.setKnowledgeBindings(List.of("knowledge"));
         assertThrows(BusinessException.class,()->service.save(null,input,2L));verify(mapper,never()).insert(any());
+    }
+
+    @Test void frozenRuntimeIncludesPinnedMcpVersionAndRequiresV4DeviceCapability() {
+        var runtime=new McpRuntimeDTO();runtime.setConfigurationId(7L);runtime.setConfigurationVersionId(70L);
+        runtime.setServerCode("github");runtime.setConfigDigest("b".repeat(64));runtime.setTransportType("STDIO");runtime.setCommand("npx");
+        when(mcp.runtimes(List.of(70L))).thenReturn(List.of(runtime));versions.get(100L).setMcpVersionIds("[70]");
+        assertThrows(BusinessException.class,()->service.bindAtCreation(c,10L));
+        devices.selectById(8L).setExpertMcp(true);
+        service.bindAtCreation(c,10L);
+
+        var frozen=service.freeze(c,4L);
+
+        assertEquals(4,frozen.getSchemaVersion());assertEquals(70L,frozen.getMcpServers().getFirst().getConfigurationVersionId());
+        assertEquals(64,frozen.getRuntimeKey().length());
     }
 
     @Test void editingPublishedExpertReturnsItToDraft() {
