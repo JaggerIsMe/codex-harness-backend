@@ -59,6 +59,7 @@ public class AgentEventServiceImpl implements AgentEventService {
         switch (type) {
             case REGISTER:
                 deviceMapper.attachmentCapability(deviceId,payload.path("capabilities").isArray() && java.util.stream.StreamSupport.stream(payload.path("capabilities").spliterator(),false).anyMatch(v -> "CONVERSATION_ATTACHMENTS_V1".equals(v.asText())));
+                deviceMapper.managedModelsCapability(deviceId,payload.path("capabilities").isArray() && java.util.stream.StreamSupport.stream(payload.path("capabilities").spliterator(),false).anyMatch(v -> "MANAGED_MODEL_PROVIDERS_V1".equals(v.asText())));
                 boolean expertV4=payload.path("capabilities").isArray() && java.util.stream.StreamSupport.stream(payload.path("capabilities").spliterator(),false).anyMatch(v -> "CONVERSATION_EXPERTS_V4".equals(v.asText()));
                 deviceMapper.expertCapability(deviceId,expertV4 || payload.path("capabilities").isArray() && java.util.stream.StreamSupport.stream(payload.path("capabilities").spliterator(),false).anyMatch(v -> "CONVERSATION_EXPERTS_V3".equals(v.asText())));
                 deviceMapper.expertMcpCapability(deviceId,expertV4);

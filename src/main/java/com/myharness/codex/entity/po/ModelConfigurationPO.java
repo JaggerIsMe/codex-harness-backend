@@ -1,0 +1,23 @@
+package com.myharness.codex.entity.po;
+
+import java.time.LocalDateTime;
+
+public class ModelConfigurationPO {
+    private Long id; private String configurationCode; private String name; private String description;
+    private String status; private Long currentVersionId; private Long revision; private Long createdBy;
+    private Long currentVersionNo; private String runtimeSpec; private String configDigest;
+    private LocalDateTime createdAt; private LocalDateTime updatedAt;
+    public Long getId(){return id;} public void setId(Long v){id=v;}
+    public String getConfigurationCode(){return configurationCode;} public void setConfigurationCode(String v){configurationCode=v;}
+    public String getName(){return name;} public void setName(String v){name=v;}
+    public String getDescription(){return description;} public void setDescription(String v){description=v;}
+    public String getStatus(){return status;} public void setStatus(String v){status=v;}
+    public Long getCurrentVersionId(){return currentVersionId;} public void setCurrentVersionId(Long v){currentVersionId=v;}
+    public Long getRevision(){return revision;} public void setRevision(Long v){revision=v;}
+    public Long getCreatedBy(){return createdBy;} public void setCreatedBy(Long v){createdBy=v;}
+    public Long getCurrentVersionNo(){return currentVersionNo;} public void setCurrentVersionNo(Long v){currentVersionNo=v;}
+    public String getRuntimeSpec(){return runtimeSpec;} public void setRuntimeSpec(String v){runtimeSpec=v;}
+    public String getConfigDigest(){return configDigest;} public void setConfigDigest(String v){configDigest=v;}
+    public LocalDateTime getCreatedAt(){return createdAt;} public void setCreatedAt(LocalDateTime v){createdAt=v;}
+    public LocalDateTime getUpdatedAt(){return updatedAt;} public void setUpdatedAt(LocalDateTime v){updatedAt=v;}
+}

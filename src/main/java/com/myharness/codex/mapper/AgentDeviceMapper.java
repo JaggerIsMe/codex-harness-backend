@@ -17,6 +17,8 @@ public interface AgentDeviceMapper {
     int expertCapability(@Param("id") Long id,@Param("supported") boolean supported);
     @Update("UPDATE agent_device SET expert_mcp=#{supported} WHERE id=#{id}")
     int expertMcpCapability(@Param("id") Long id,@Param("supported") boolean supported);
+    @Update("UPDATE agent_device SET managed_models=#{supported} WHERE id=#{id}")
+    int managedModelsCapability(@Param("id") Long id,@Param("supported") boolean supported);
     @Update("UPDATE agent_device SET conversation_attachments=#{supported} WHERE id=#{id}")
     int attachmentCapability(@Param("id") Long id,@Param("supported") boolean supported);
     @Update("UPDATE agent_workspace SET status='FAILED',failure_code='COMMAND_TIMEOUT',failure_message='目录准备超时，可重试' " +
@@ -32,15 +34,15 @@ public interface AgentDeviceMapper {
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(AgentDevicePO device);
 
-    @Select("SELECT id,enrollment_id,device_code,device_name,token_hash,status,agent_version,os_name,os_version,isolation_mode,conversation_attachments,project_experts,expert_mcp,last_heartbeat_at " +
+    @Select("SELECT id,enrollment_id,device_code,device_name,token_hash,status,agent_version,os_name,os_version,isolation_mode,conversation_attachments,project_experts,expert_mcp,managed_models,last_heartbeat_at " +
             "FROM agent_device WHERE device_code=#{deviceCode}")
     AgentDevicePO selectByCode(@Param("deviceCode") String deviceCode);
 
-    @Select("SELECT id,enrollment_id,device_code,device_name,token_hash,status,agent_version,os_name,os_version,isolation_mode,conversation_attachments,project_experts,expert_mcp,last_heartbeat_at " +
+    @Select("SELECT id,enrollment_id,device_code,device_name,token_hash,status,agent_version,os_name,os_version,isolation_mode,conversation_attachments,project_experts,expert_mcp,managed_models,last_heartbeat_at " +
             "FROM agent_device WHERE id=#{id}")
     AgentDevicePO selectById(@Param("id") Long id);
 
-    @Select("SELECT id,enrollment_id,device_code,device_name,token_hash,status,agent_version,os_name,os_version,isolation_mode,conversation_attachments,project_experts,expert_mcp,last_heartbeat_at " +
+    @Select("SELECT id,enrollment_id,device_code,device_name,token_hash,status,agent_version,os_name,os_version,isolation_mode,conversation_attachments,project_experts,expert_mcp,managed_models,last_heartbeat_at " +
             "FROM agent_device ORDER BY created_at DESC")
     List<AgentDevicePO> selectAll();
 
@@ -53,7 +55,7 @@ public interface AgentDeviceMapper {
     @Update("UPDATE agent_device SET status='OFFLINE' WHERE status='ONLINE' AND (last_heartbeat_at IS NULL OR last_heartbeat_at<#{deadline})")
     int markTimedOutOffline(@Param("deadline") LocalDateTime deadline);
 
-    @Select("SELECT id,enrollment_id,device_code,device_name,token_hash,status,agent_version,os_name,os_version,isolation_mode,conversation_attachments,project_experts,expert_mcp,last_heartbeat_at " +
+    @Select("SELECT id,enrollment_id,device_code,device_name,token_hash,status,agent_version,os_name,os_version,isolation_mode,conversation_attachments,project_experts,expert_mcp,managed_models,last_heartbeat_at " +
             "FROM agent_device WHERE status='ONLINE' AND (last_heartbeat_at IS NULL OR last_heartbeat_at<#{deadline})")
     List<AgentDevicePO> selectTimedOut(@Param("deadline") LocalDateTime deadline);
 

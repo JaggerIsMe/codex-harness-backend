@@ -28,6 +28,7 @@ public class UserSecurityConfig {
                 .requestMatchers("/api/v1/auth/profile","/api/v1/auth/logout","/api/v1/auth/change-password","/api/v1/auth/socket-ticket").authenticated()
                 .requestMatchers("/api/v1/users/**","/api/v1/roles").hasAuthority("system:user:manage")
                 .requestMatchers("/api/v1/devices/available").hasAuthority("workspace:use")
+                .requestMatchers("/api/v1/admin/model-configurations/**","/api/v1/devices/*/model-assignment").hasAuthority("model:manage")
                 .requestMatchers("/api/v1/devices/**").hasAuthority("device:manage")
                 .requestMatchers("/api/v1/skills/**","/api/v1/skill-deployments/**").hasAuthority("skill:manage")
                 .requestMatchers(HttpMethod.GET,"/api/v1/admin/mcp-configurations/selectable-versions").hasAuthority("expert:manage")

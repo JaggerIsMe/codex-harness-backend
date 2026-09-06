@@ -3,6 +3,9 @@ package com.myharness.codex.entity.po;
 import java.time.LocalDateTime;
 
 public class ConversationPO {
+    private String modelRuntimeKey;
+    public String getModelRuntimeKey(){return modelRuntimeKey;}
+    public void setModelRuntimeKey(String value){modelRuntimeKey=value;}
     private String expertRuntimeKey;
     public String getExpertRuntimeKey() { return expertRuntimeKey; }
     public void setExpertRuntimeKey(String value) { expertRuntimeKey=value; }

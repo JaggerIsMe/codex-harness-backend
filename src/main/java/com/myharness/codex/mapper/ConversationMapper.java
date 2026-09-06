@@ -60,30 +60,30 @@ public interface ConversationMapper {
             @Param("previous") String previous,@Param("next") String next,@Param("now") LocalDateTime now);
     @Select("SELECT t.id turn_id,c.id conversation_id,c.user_id,c.device_id,d.device_code FROM conversation_turn t JOIN conversation c ON c.id=t.conversation_id JOIN agent_device d ON d.id=c.device_id WHERE t.status IN ('CREATED','RUNNING','WAITING_APPROVAL')")
     List<com.myharness.codex.entity.vo.RevokedTurnVO> selectRunningWork();
-    @Insert("INSERT INTO conversation(user_id,device_id,workspace_id,project_id,title,status,last_activity_at,selected_expert_id,selected_expert_version_id,expert_selection_revision) " +
-            "VALUES(#{userId},#{deviceId},#{workspaceId},#{projectId},#{title},#{status},#{lastActivityAt},#{selectedExpertId},#{selectedExpertVersionId},#{expertSelectionRevision})")
+    @Insert("INSERT INTO conversation(user_id,device_id,workspace_id,project_id,title,status,last_activity_at,selected_expert_id,selected_expert_version_id,expert_selection_revision,model_runtime_key) " +
+            "VALUES(#{userId},#{deviceId},#{workspaceId},#{projectId},#{title},#{status},#{lastActivityAt},#{selectedExpertId},#{selectedExpertVersionId},#{expertSelectionRevision},#{modelRuntimeKey})")
     @Options(useGeneratedKeys=true,keyProperty="id")
     int insertConversation(ConversationPO conversation);
 
-    @Select("SELECT c.id,c.user_id,c.device_id,c.workspace_id,c.project_id,c.title,c.codex_thread_id,c.status,c.last_activity_at,c.selected_expert_id,c.selected_expert_version_id,c.expert_selection_revision,c.expert_runtime_key," +
+    @Select("SELECT c.id,c.user_id,c.device_id,c.workspace_id,c.project_id,c.title,c.codex_thread_id,c.status,c.last_activity_at,c.selected_expert_id,c.selected_expert_version_id,c.expert_selection_revision,c.expert_runtime_key,c.model_runtime_key," +
             "d.device_code,w.workspace_name,p.project_name FROM conversation c JOIN agent_device d ON d.id=c.device_id " +
             "JOIN agent_workspace w ON w.id=c.workspace_id JOIN codex_project p ON p.id=c.project_id WHERE c.id=#{id}")
     ConversationPO selectConversation(@Param("id") Long id);
 
-    @Select("SELECT c.id,c.user_id,c.device_id,c.workspace_id,c.project_id,c.title,c.codex_thread_id,c.status,c.last_activity_at,c.selected_expert_id,c.selected_expert_version_id,c.expert_selection_revision,c.expert_runtime_key," +
+    @Select("SELECT c.id,c.user_id,c.device_id,c.workspace_id,c.project_id,c.title,c.codex_thread_id,c.status,c.last_activity_at,c.selected_expert_id,c.selected_expert_version_id,c.expert_selection_revision,c.expert_runtime_key,c.model_runtime_key," +
             "d.device_code,w.workspace_name,p.project_name FROM conversation c JOIN agent_device d ON d.id=c.device_id " +
             "JOIN agent_workspace w ON w.id=c.workspace_id JOIN codex_project p ON p.id=c.project_id " +
             "WHERE c.user_id=#{userId} AND c.project_id=#{projectId} " +
             "ORDER BY c.last_activity_at DESC,c.id DESC LIMIT 100")
     List<ConversationPO> selectProjectConversations(@Param("projectId") Long projectId,@Param("userId") Long userId);
 
-    @Select("SELECT c.id,c.user_id,c.device_id,c.workspace_id,c.project_id,c.title,c.codex_thread_id,c.status,c.last_activity_at,c.selected_expert_id,c.selected_expert_version_id,c.expert_selection_revision,c.expert_runtime_key," +
+    @Select("SELECT c.id,c.user_id,c.device_id,c.workspace_id,c.project_id,c.title,c.codex_thread_id,c.status,c.last_activity_at,c.selected_expert_id,c.selected_expert_version_id,c.expert_selection_revision,c.expert_runtime_key,c.model_runtime_key," +
             "d.device_code,w.workspace_name,p.project_name FROM conversation c JOIN agent_device d ON d.id=c.device_id " +
             "JOIN agent_workspace w ON w.id=c.workspace_id JOIN codex_project p ON p.id=c.project_id " +
             "WHERE c.id=#{id} AND c.project_id=#{projectId} AND c.user_id=#{userId}")
     ConversationPO selectOwnedConversation(@Param("projectId") Long projectId,@Param("id") Long id,@Param("userId") Long userId);
 
-    @Select("SELECT c.id,c.user_id,c.device_id,c.workspace_id,c.project_id,c.title,c.codex_thread_id,c.status,c.last_activity_at,c.selected_expert_id,c.selected_expert_version_id,c.expert_selection_revision,c.expert_runtime_key," +
+    @Select("SELECT c.id,c.user_id,c.device_id,c.workspace_id,c.project_id,c.title,c.codex_thread_id,c.status,c.last_activity_at,c.selected_expert_id,c.selected_expert_version_id,c.expert_selection_revision,c.expert_runtime_key,c.model_runtime_key," +
             "d.device_code,w.workspace_name,p.project_name FROM conversation c JOIN agent_device d ON d.id=c.device_id " +
             "JOIN agent_workspace w ON w.id=c.workspace_id JOIN codex_project p ON p.id=c.project_id WHERE c.id=#{id} FOR UPDATE")
     ConversationPO lockConversation(@Param("id") Long id);
@@ -96,20 +96,20 @@ public interface ConversationMapper {
     @Update("UPDATE conversation SET status='FAILED',last_activity_at=#{now} WHERE id=#{id} AND device_id=#{deviceId}")
     int failConversation(@Param("id") Long id,@Param("deviceId") Long deviceId,@Param("now") LocalDateTime now);
 
-    @Insert("INSERT INTO conversation_turn(conversation_id,status,client_request_id,request_hash,preparation_phase,expert_version_id,expert_name,expert_runtime) VALUES(#{conversationId},'CREATED',#{clientRequestId},#{requestHash},#{preparationPhase},#{expertVersionId},#{expertName},#{expertRuntime})")
+    @Insert("INSERT INTO conversation_turn(conversation_id,status,client_request_id,request_hash,preparation_phase,expert_version_id,expert_name,expert_runtime,model_configuration_version_id,model_name,model_runtime) VALUES(#{conversationId},'CREATED',#{clientRequestId},#{requestHash},#{preparationPhase},#{expertVersionId},#{expertName},#{expertRuntime},#{modelConfigurationVersionId},#{modelName},#{modelRuntime})")
     @Options(useGeneratedKeys=true,keyProperty="id")
     int insertTurn(ConversationTurnPO turn);
 
-    @Select("SELECT id,conversation_id,codex_turn_id,status,client_request_id,request_hash,preparation_phase,expert_version_id,expert_name,expert_runtime FROM conversation_turn WHERE id=#{id}")
+    @Select("SELECT id,conversation_id,codex_turn_id,status,client_request_id,request_hash,preparation_phase,expert_version_id,expert_name,expert_runtime,model_configuration_version_id,model_name,model_runtime FROM conversation_turn WHERE id=#{id}")
     ConversationTurnPO selectTurn(@Param("id") Long id);
 
-    @Select("SELECT id,conversation_id,codex_turn_id,status,client_request_id,request_hash,preparation_phase,expert_version_id,expert_name,expert_runtime FROM conversation_turn " +
+    @Select("SELECT id,conversation_id,codex_turn_id,status,client_request_id,request_hash,preparation_phase,expert_version_id,expert_name,expert_runtime,model_configuration_version_id,model_name,model_runtime FROM conversation_turn " +
             "WHERE conversation_id=#{conversationId} AND status IN ('CREATED','RUNNING','WAITING_APPROVAL') " +
             "ORDER BY id DESC LIMIT 1")
     ConversationTurnPO selectActiveTurn(@Param("conversationId") Long conversationId);
 
     @Update("UPDATE conversation_turn t JOIN conversation c ON c.id=t.conversation_id " +
-            "SET t.codex_turn_id=#{codexTurnId},t.status='RUNNING',t.started_at=#{now},c.last_activity_at=#{now} " +
+            "SET t.codex_turn_id=#{codexTurnId},t.status='RUNNING',t.started_at=#{now},c.last_activity_at=#{now},c.model_runtime_key=JSON_UNQUOTE(JSON_EXTRACT(t.model_runtime,'$.runtimeKey')) " +
             "WHERE t.id=#{turnId} AND t.conversation_id=#{conversationId} AND c.device_id=#{deviceId} AND t.status='CREATED'")
     int setTurnStarted(@Param("turnId") Long turnId,@Param("conversationId") Long conversationId,
                        @Param("deviceId") Long deviceId,@Param("codexTurnId") String codexTurnId,
@@ -175,7 +175,7 @@ public interface ConversationMapper {
     @Select("SELECT * FROM conversation_message WHERE turn_id=#{turnId} AND message_key IS NOT NULL ORDER BY sequence_no")
     List<ConversationMessagePO> selectTurnMessages(@Param("turnId") Long turnId);
 
-    @Select("SELECT id,conversation_id,codex_turn_id,status,client_request_id,request_hash,preparation_phase,expert_version_id,expert_name,expert_runtime FROM conversation_turn WHERE conversation_id=#{conversationId} ORDER BY id DESC LIMIT 1")
+    @Select("SELECT id,conversation_id,codex_turn_id,status,client_request_id,request_hash,preparation_phase,expert_version_id,expert_name,expert_runtime,model_configuration_version_id,model_name,model_runtime FROM conversation_turn WHERE conversation_id=#{conversationId} ORDER BY id DESC LIMIT 1")
     ConversationTurnPO selectLatestTurn(@Param("conversationId") Long conversationId);
 
     @Select("SELECT t.id,t.conversation_id,t.status FROM conversation_turn t JOIN conversation c ON c.id=t.conversation_id " +

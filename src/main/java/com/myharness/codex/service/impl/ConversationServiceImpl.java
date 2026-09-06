@@ -36,6 +36,7 @@ import java.util.stream.Collectors;
 @Service
 public class ConversationServiceImpl implements ConversationService {
     private final com.myharness.codex.service.ExpertService experts;
+    private final com.myharness.codex.service.ModelConfigurationService models;
     private final ConversationMapper conversationMapper;
     private final com.myharness.codex.service.ConversationAttachmentService attachments;
     private final AgentDeviceMapper deviceMapper;
@@ -47,12 +48,14 @@ public class ConversationServiceImpl implements ConversationService {
     private final ConversationMessageStream streams;
     private final com.myharness.codex.security.AuthorizationService access;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public ConversationServiceImpl(ConversationMapper conversationMapper,AgentDeviceMapper deviceMapper,
                                    AgentCommandGateway gateway,TransactionTemplate transactions,
                                    ApprovalMapper approvalMapper,ObjectMapper objectMapper,ProjectMapper projectMapper,ConversationMessageStream streams,
                                    com.myharness.codex.security.AuthorizationService access, com.myharness.codex.service.ConversationAttachmentService attachments,
-                                   com.myharness.codex.service.ExpertService experts) {
+                                   com.myharness.codex.service.ExpertService experts,com.myharness.codex.service.ModelConfigurationService models) {
         this.experts=experts;
+        this.models=models;
         this.conversationMapper=conversationMapper; this.deviceMapper=deviceMapper; this.gateway=gateway; this.transactions=transactions;
         this.approvalMapper=approvalMapper; this.objectMapper=objectMapper;
         this.projectMapper=projectMapper;
@@ -60,10 +63,18 @@ public class ConversationServiceImpl implements ConversationService {
         this.access=access; this.attachments=attachments;
     }
 
+    ConversationServiceImpl(ConversationMapper conversationMapper,AgentDeviceMapper deviceMapper,
+        AgentCommandGateway gateway,TransactionTemplate transactions,ApprovalMapper approvalMapper,ObjectMapper objectMapper,
+        ProjectMapper projectMapper,ConversationMessageStream streams,com.myharness.codex.security.AuthorizationService access,
+        com.myharness.codex.service.ConversationAttachmentService attachments,com.myharness.codex.service.ExpertService experts) {
+        this(conversationMapper,deviceMapper,gateway,transactions,approvalMapper,objectMapper,projectMapper,streams,access,attachments,experts,null);
+    }
+
     @Override public ConversationVO createConversation(Long projectId,CreateConversationDTO dto,Long operatorId) {
         access.requirePermission(operatorId,"conversation:create");
         ProjectPO project=requireActiveProject(projectId,operatorId);
         AgentDevicePO device=requireOnline(project.getDeviceId());
+        var modelRuntime=models==null?null:models.runtimeForDevice(device.getId());
         AgentWorkspacePO workspace=deviceMapper.selectWorkspace(project.getWorkspaceId(),device.getId());
         if (workspace==null || !"ENABLED".equals(workspace.getStatus())) throw new BusinessException(ErrorCode.CONFLICT,"项目执行目录当前不可用");
         ConversationPO conversation=transactions.execute(status -> {
@@ -72,12 +83,13 @@ public class ConversationServiceImpl implements ConversationService {
             value.setUserId(operatorId); value.setDeviceId(device.getId()); value.setWorkspaceId(workspace.getId());
             value.setProjectId(project.getId());
             value.setTitle(trimOr(dto.getTitle(),"新会话")); value.setStatus("ACTIVE"); value.setLastActivityAt(LocalDateTime.now());
+            if(modelRuntime!=null)value.setModelRuntimeKey(modelRuntime.getRuntimeKey());
             experts.bindAtCreation(value,dto.getExpertId());
             conversationMapper.insertConversation(value); return value;
         });
         Map<String,Object> payload=new LinkedHashMap<>();
         payload.put("projectId",String.valueOf(project.getId())); payload.put("conversationId",String.valueOf(conversation.getId())); payload.put("workspaceName",workspace.getWorkspaceName());
-        payload.put("model",trimOr(dto.getModel(),null));
+        if(modelRuntime!=null)payload.put("modelRuntime",modelRuntime);
         try { gateway.send(device.getDeviceCode(),new AgentCommand("START_THREAD",String.valueOf(conversation.getId()),payload)); }
         catch (RuntimeException exception) {
             conversationMapper.failConversation(conversation.getId(),device.getId(),LocalDateTime.now());
@@ -98,11 +110,13 @@ public class ConversationServiceImpl implements ConversationService {
         catch (com.fasterxml.jackson.core.JsonProcessingException e) {throw new IllegalArgumentException("Invalid Turn input",e);}
         final String requestHash=fingerprint;
         java.util.concurrent.atomic.AtomicBoolean created=new java.util.concurrent.atomic.AtomicBoolean();
+        java.util.concurrent.atomic.AtomicReference<String> threadModelRuntimeKey=new java.util.concurrent.atomic.AtomicReference<>(conversation.getModelRuntimeKey());
         final ConversationTurnPO turn;
         try {
             turn=transactions.execute(status -> {
                 Long projectRevision=experts.lockProject(projectId);
                 ConversationPO locked=conversationMapper.lockConversation(conversationId);
+                threadModelRuntimeKey.set(locked.getModelRuntimeKey());
                 if(dto.getClientRequestId()!=null) {
                     ConversationTurnPO previous=conversationMapper.byClientRequest(conversationId,dto.getClientRequestId());
                     if(previous!=null) {
@@ -117,6 +131,9 @@ public class ConversationServiceImpl implements ConversationService {
                 var runtime=experts.freeze(locked,projectRevision);
                 value.setExpertVersionId(runtime.getExpertVersionId()); value.setExpertName(runtime.getName());
                 value.setExpertRuntime(experts.write(runtime));
+                if(models!=null){var model=models.runtimeForDevice(locked.getDeviceId());
+                    value.setModelConfigurationVersionId(model.getConfigurationVersionId());value.setModelName(model.getName());
+                    value.setModelRuntime(models.snapshot(model));}
                 value.setClientRequestId(dto.getClientRequestId()); value.setRequestHash(requestHash);
                 value.setPreparationPhase(dto.getAttachmentIds().isEmpty() ? null : "DOWNLOADING");
                 if(!runtime.getSkills().isEmpty()) value.setPreparationPhase("EXPERT_SKILLS");
@@ -135,13 +152,14 @@ public class ConversationServiceImpl implements ConversationService {
         payload.put("workspaceName",conversation.getWorkspaceName());
         payload.put("codexThreadId",conversation.getCodexThreadId());
         payload.put("threadRuntimeKey",conversation.getExpertRuntimeKey());
+        payload.put("threadModelRuntimeKey",threadModelRuntimeKey.get());
         var frozenRuntime=experts.runtime(turn.getExpertRuntime());
         payload.put("recreateUnstartedThread",frozenRuntime!=null && frozenRuntime.getSchemaVersion()>=2
                 ? conversationMapper.canRecreateExpertThread(conversationId,turn.getId(),frozenRuntime.getRuntimeKey())
                 : conversationMapper.canRecreateUnstartedThread(conversationId,turn.getId()));
         if(!dto.getAttachmentIds().isEmpty()) payload.put("attachments",attachments.forTurn(turn.getId()));
-        payload.put("message",dto.getMessage()==null ? "" : dto.getMessage()); payload.put("model",trimOr(dto.getModel(),null));
-        payload.put("reasoningEffort",trimOr(dto.getReasoningEffort(),null));
+        payload.put("message",dto.getMessage()==null ? "" : dto.getMessage());
+        if(models!=null)payload.put("modelRuntime",models.runtimeForVersion(turn.getModelConfigurationVersionId()));
         payload.put("expertRuntime",frozenRuntime);
         try { gateway.send(conversation.getDeviceCode(),new AgentCommand("START_TURN",String.valueOf(turn.getId()),payload)); }
         catch (RuntimeException exception) {

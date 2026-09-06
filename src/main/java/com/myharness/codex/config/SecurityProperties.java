@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 public class SecurityProperties {
 
     private String jwtSecret;
+    private String modelSecretKey;
     private long jwtExpireMinutes = 120L;
 
     public String getJwtSecret() {
@@ -17,6 +18,9 @@ public class SecurityProperties {
     public void setJwtSecret(String jwtSecret) {
         this.jwtSecret = jwtSecret;
     }
+
+    public String getModelSecretKey() { return modelSecretKey; }
+    public void setModelSecretKey(String value) { modelSecretKey = value; }
 
     public long getJwtExpireMinutes() {
         return jwtExpireMinutes;

@@ -53,6 +53,7 @@ harness:
     event-retention-days: 7
   security:
     jwt-secret: zse6a8suuxZfJP7FquSReLWlL9E8qxGQkk1ECZbRfEe39wThsbBLlGe4XNSkqqMkCQimn2g1fiap36vKmoQnog==
+    model-secret-key: ${HARNESS_MODEL_SECRET_KEY:}
     jwt-expire-minutes: 120
   bootstrap-admin:
     enabled: true

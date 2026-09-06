@@ -11,12 +11,6 @@ public class StartTurnDTO {
     public void setClientRequestId(String value){clientRequestId=value;}
     public java.util.List<Long> getAttachmentIds(){return attachmentIds==null ? java.util.List.of() : attachmentIds;}
     public void setAttachmentIds(java.util.List<Long> value){attachmentIds=value;}
-    @Size(max=128) private String model;
-    @Size(max=32) private String reasoningEffort;
     public String getMessage() { return message; }
     public void setMessage(String value) { message=value; }
-    public String getModel() { return model; }
-    public void setModel(String value) { model=value; }
-    public String getReasoningEffort() { return reasoningEffort; }
-    public void setReasoningEffort(String value) { reasoningEffort=value; }
 }

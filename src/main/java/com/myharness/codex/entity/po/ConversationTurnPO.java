@@ -1,6 +1,10 @@
 package com.myharness.codex.entity.po;
 
 public class ConversationTurnPO {
+    private Long modelConfigurationVersionId; private String modelName; private String modelRuntime;
+    public Long getModelConfigurationVersionId(){return modelConfigurationVersionId;} public void setModelConfigurationVersionId(Long v){modelConfigurationVersionId=v;}
+    public String getModelName(){return modelName;} public void setModelName(String v){modelName=v;}
+    public String getModelRuntime(){return modelRuntime;} public void setModelRuntime(String v){modelRuntime=v;}
     private Long expertVersionId;
     public Long getExpertVersionId() {return expertVersionId;}
     public void setExpertVersionId(Long value) {expertVersionId=value;}
