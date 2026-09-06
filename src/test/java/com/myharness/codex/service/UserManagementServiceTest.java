@@ -17,11 +17,11 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class UserManagementServiceTest {
-    RbacMapper rbac;SysUserMapper users;AgentDeviceMapper devices;ClientEventWebSocketHandler sockets;
+    RbacMapper rbac;SysUserMapper users;AgentDeviceMapper devices;ExpertMapper experts;ClientEventWebSocketHandler sockets;
     UserManagementService service;SysUserPO target;BCryptPasswordEncoder encoder=new BCryptPasswordEncoder(4);
     @BeforeEach void setup(){
-        rbac=mock(RbacMapper.class);users=mock(SysUserMapper.class);devices=mock(AgentDeviceMapper.class);sockets=mock(ClientEventWebSocketHandler.class);
-        service=new UserManagementService(rbac,users,devices,encoder,mock(AuthorizationService.class),sockets,new ObjectMapper());
+        rbac=mock(RbacMapper.class);users=mock(SysUserMapper.class);devices=mock(AgentDeviceMapper.class);experts=mock(ExpertMapper.class);sockets=mock(ClientEventWebSocketHandler.class);
+        service=new UserManagementService(rbac,users,devices,experts,encoder,mock(AuthorizationService.class),sockets,new ObjectMapper());
         UserContext.set(new UserPrincipal(1L,"admin","Administrator"));TransactionSynchronizationManager.initSynchronization();
         when(rbac.lockAdministratorRole()).thenReturn(1L);
         target=new SysUserPO();target.setId(2L);target.setUsername("normal");target.setDisplayName("Normal");target.setStatus("ENABLED");
@@ -64,6 +64,13 @@ class UserManagementServiceTest {
     @Test void invalidMachineDoesNotRevokeExistingAssignments(){
         assertThrows(BusinessException.class,()->service.assignDevices(2L,new AssignDevicesDTO(List.of(99L))));
         verify(rbac,never()).revokeDevices(any());verify(rbac,never()).revokeTokens(any());
+    }
+    @Test void expertAssignmentAcceptsOnlyPublishedExpertsAndAuditsReplacement(){
+        var published=new ExpertPO();published.setId(10L);published.setStatus("PUBLISHED");when(experts.get(10L)).thenReturn(published);when(rbac.expertIds(2L)).thenReturn(List.of(9L));
+        service.assignExperts(2L,new AssignExpertsDTO(List.of(10L)));
+        verify(rbac).revokeExperts(2L);verify(rbac).assignExpert(2L,10L,1L);verify(rbac).audit(eq(1L),eq("USER_EXPERT_ASSIGN"),eq("USER"),eq("2"),contains("after"));
+        var disabled=new ExpertPO();disabled.setId(11L);disabled.setStatus("DISABLED");when(experts.get(11L)).thenReturn(disabled);
+        assertThrows(BusinessException.class,()->service.assignExperts(2L,new AssignExpertsDTO(List.of(11L))));
     }
 }
 

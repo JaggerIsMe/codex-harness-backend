@@ -17,6 +17,30 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
 
 class AgentEventServiceImplTest {
+    @Test void compatibleRuntimeUpdateMustMatchItsFrozenPendingTurnAndThread() {
+        var devices=mock(AgentDeviceMapper.class);var conversations=mock(ConversationMapper.class);var clients=mock(ClientEventWebSocketHandler.class);
+        var service=new AgentEventServiceImpl(devices,conversations,mock(ApprovalMapper.class),mock(SkillMapper.class),clients,streams,transactions);
+        var envelope=new AgentProtocolEnvelope();envelope.setType("EXPERT_RUNTIME_UPDATED");envelope.setMessageId("expert-update");envelope.setTimestamp(10L);
+        envelope.setPayload(new ObjectMapper().createObjectNode().put("conversationId","4").put("turnId","15")
+                .put("codexThreadId","thread").put("previousExpertRuntimeKey","a".repeat(64)).put("expertRuntimeKey","b".repeat(64)));
+        when(devices.insertEvent(1L,"expert-update","EXPERT_RUNTIME_UPDATED",10L)).thenReturn(1);
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,()->service.process(1L,envelope));
+        when(conversations.updateCompatibleExpertRuntime(eq(4L),eq(1L),eq(15L),eq("thread"),eq("a".repeat(64)),eq("b".repeat(64)),any())).thenReturn(1);
+        assertTrue(service.process(1L,envelope));
+    }
+    @Test void expertThreadReplacementMustMatchFrozenPendingTurnAndPreviousThread() {
+        var devices=mock(AgentDeviceMapper.class);var conversations=mock(ConversationMapper.class);var clients=mock(ClientEventWebSocketHandler.class);
+        var service=new AgentEventServiceImpl(devices,conversations,mock(ApprovalMapper.class),mock(SkillMapper.class),clients,streams,transactions);
+        var envelope=new AgentProtocolEnvelope();envelope.setType("THREAD_STARTED");envelope.setMessageId("expert-reset");envelope.setTimestamp(10L);
+        envelope.setPayload(new ObjectMapper().createObjectNode().put("conversationId","4").put("turnId","15")
+                .put("previousCodexThreadId","old").put("codexThreadId","new").put("expertRuntimeKey","a".repeat(64)));
+        when(devices.insertEvent(1L,"expert-reset","THREAD_STARTED",10L)).thenReturn(1);
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,()->service.process(1L,envelope));
+        verify(conversations,never()).replaceUnstartedThread(any(),any(),any(),any(),any(),any());
+        verify(clients,never()).sendToUser(any(),any());
+        when(conversations.replaceExpertThread(eq(4L),eq(1L),eq(15L),eq("old"),eq("new"),eq("a".repeat(64)),any())).thenReturn(1);
+        assertTrue(service.process(1L,envelope));
+    }
     @Test void replacementRequiresAtomicHistoryAndPreviousBindingCheck() {
         var devices=mock(AgentDeviceMapper.class);var conversations=mock(ConversationMapper.class);
         var clients=mock(ClientEventWebSocketHandler.class);

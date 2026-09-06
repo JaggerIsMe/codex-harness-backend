@@ -30,6 +30,8 @@ public class UserSecurityConfig {
                 .requestMatchers("/api/v1/devices/available").hasAuthority("workspace:use")
                 .requestMatchers("/api/v1/devices/**").hasAuthority("device:manage")
                 .requestMatchers("/api/v1/skills/**","/api/v1/skill-deployments/**").hasAuthority("skill:manage")
+                .requestMatchers("/api/v1/admin/experts/**").hasAuthority("expert:manage")
+                .requestMatchers(HttpMethod.GET,"/api/v1/expert-market/**").hasAuthority("expert:read")
                 .requestMatchers("/api/v1/projects/**","/api/v1/approvals/**").hasAuthority("workspace:use")
                 .anyRequest().denyAll())
             .exceptionHandling(e->e

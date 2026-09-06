@@ -59,6 +59,7 @@ public class AgentEventServiceImpl implements AgentEventService {
         switch (type) {
             case REGISTER:
                 deviceMapper.attachmentCapability(deviceId,payload.path("capabilities").isArray() && java.util.stream.StreamSupport.stream(payload.path("capabilities").spliterator(),false).anyMatch(v -> "CONVERSATION_ATTACHMENTS_V1".equals(v.asText())));
+                deviceMapper.expertCapability(deviceId,payload.path("capabilities").isArray() && java.util.stream.StreamSupport.stream(payload.path("capabilities").spliterator(),false).anyMatch(v -> "CONVERSATION_EXPERTS_V3".equals(v.asText())));
                 deviceMapper.updateRegistration(deviceId,text(payload,"deviceName",128),text(payload,"agentVersion",64),
                         text(payload,"osName",128),optionalText(payload,"osVersion",128),
                         optionalText(payload,"isolationMode",32)==null ? "UNKNOWN" : optionalText(payload,"isolationMode",32),now);
@@ -68,6 +69,7 @@ public class AgentEventServiceImpl implements AgentEventService {
             case HEARTBEAT: deviceMapper.heartbeat(deviceId,now); break;
             case WORKSPACES_CHANGED: mergeWorkspaces(deviceId,payload,now); break;
             case THREAD_STARTED: threadStarted(deviceId,payload,now); break;
+            case EXPERT_RUNTIME_UPDATED: expertRuntimeUpdated(deviceId,payload,now); break;
             case TURN_STARTED: turnStarted(deviceId,payload,now); break;
             case APPROVAL_REQUIRED: approvalRequired(deviceId,payload); break;
             case APPROVAL_RESOLVED: approvalResolved(deviceId,payload); break;
@@ -160,12 +162,27 @@ public class AgentEventServiceImpl implements AgentEventService {
     private void threadStarted(Long deviceId, JsonNode payload, LocalDateTime now) {
         Long conversationId=id(payload,"conversationId");
         if (payload.hasNonNull("previousCodexThreadId")) {
+            if(payload.hasNonNull("expertRuntimeKey")) {
+                String key=text(payload,"expertRuntimeKey",64);
+                if(!key.matches("[0-9a-f]{64}") || conversationMapper.replaceExpertThread(conversationId,deviceId,id(payload,"turnId"),
+                        text(payload,"previousCodexThreadId",128),text(payload,"codexThreadId",128),key,now)!=1)
+                    throw new IllegalArgumentException("Expert runtime replacement does not match the pending Turn and previous binding");
+                return;
+            }
             if (conversationMapper.replaceUnstartedThread(conversationId,deviceId,id(payload,"turnId"),
                     text(payload,"previousCodexThreadId",128),text(payload,"codexThreadId",128),now)!=1)
                 throw new IllegalArgumentException("Conversation history or binding does not allow thread reinitialization");
             return;
         }
         conversationMapper.setThreadStarted(conversationId,deviceId,text(payload,"codexThreadId",128),now);
+    }
+    private void expertRuntimeUpdated(Long deviceId, JsonNode payload, LocalDateTime now) {
+        String next=text(payload,"expertRuntimeKey",64);
+        String previous=optionalText(payload,"previousExpertRuntimeKey",64);
+        if(!next.matches("[0-9a-f]{64}") || (previous!=null && !previous.matches("[0-9a-f]{64}")) ||
+                conversationMapper.updateCompatibleExpertRuntime(id(payload,"conversationId"),deviceId,id(payload,"turnId"),
+                        text(payload,"codexThreadId",128),previous,next,now)!=1)
+            throw new IllegalArgumentException("Compatible expert runtime update does not match the pending Turn and thread binding");
     }
     private void turnStarted(Long deviceId, JsonNode payload, LocalDateTime now) {
         conversationMapper.setTurnStarted(id(payload,"turnId"),id(payload,"conversationId"),deviceId,
@@ -253,6 +270,7 @@ public class AgentEventServiceImpl implements AgentEventService {
         Long conversationId=null;
         switch (type) {
             case THREAD_STARTED:
+            case EXPERT_RUNTIME_UPDATED:
             case TURN_STARTED:
             case TURN_EVENT:
             case APPROVAL_REQUIRED:
@@ -284,6 +302,7 @@ public class AgentEventServiceImpl implements AgentEventService {
     private boolean isConversationScoped(AgentEventType type,JsonNode payload) {
         switch (type) {
             case THREAD_STARTED:
+            case EXPERT_RUNTIME_UPDATED:
             case TURN_STARTED:
             case TURN_EVENT:
             case APPROVAL_REQUIRED:

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myharness.codex.entity.dto.*;
 import com.myharness.codex.entity.enums.ErrorCode;
 import com.myharness.codex.entity.po.SysUserPO;
+import com.myharness.codex.entity.po.ExpertPO;
 import com.myharness.codex.entity.vo.*;
 import com.myharness.codex.exception.BusinessException;
 import com.myharness.codex.mapper.*;
@@ -23,13 +24,14 @@ public class UserManagementService {
     private final RbacMapper rbac;
     private final SysUserMapper users;
     private final AgentDeviceMapper devices;
+    private final ExpertMapper experts;
     private final PasswordEncoder passwords;
     private final AuthorizationService access;
     private final ClientEventWebSocketHandler sockets;
     private final ObjectMapper json;
-    public UserManagementService(RbacMapper rbac,SysUserMapper users,AgentDeviceMapper devices,PasswordEncoder passwords,
+    public UserManagementService(RbacMapper rbac,SysUserMapper users,AgentDeviceMapper devices,ExpertMapper experts,PasswordEncoder passwords,
                                  AuthorizationService access,ClientEventWebSocketHandler sockets,ObjectMapper json) {
-        this.rbac=rbac;this.users=users;this.devices=devices;this.passwords=passwords;this.access=access;this.sockets=sockets;this.json=json;
+        this.rbac=rbac;this.users=users;this.devices=devices;this.experts=experts;this.passwords=passwords;this.access=access;this.sockets=sockets;this.json=json;
     }
     private Long administrator() { Long id=UserContext.requireCurrentUser().getId();access.requirePermission(id,"system:user:manage");return id; }
     public PageVO<ManagedUserVO> list(String keyword,String status,int page,int size) {
@@ -71,6 +73,20 @@ public class UserManagementService {
         rbac.revokeTokens(id);audit(operator,"USER_DEVICE_ASSIGN",id,Map.of("before",before,"after",dto.deviceIds()));
         disconnectAfterCommit(id);return view(users.selectById(id));
     }
+    @Transactional(isolation=Isolation.READ_COMMITTED) public ManagedUserVO assignExperts(Long id,AssignExpertsDTO dto) {
+        Long operator=administrator();lockAdministration();requireLocked(id);
+        List<Long> selected=new ArrayList<>(new LinkedHashSet<>(dto.expertIds()));
+        if(selected.size()!=dto.expertIds().size()) throw new BusinessException(ErrorCode.INVALID_REQUEST,"专家列表不能重复");
+        for(Long expertId:selected) {
+            ExpertPO expert=experts.get(expertId);
+            if(expert==null || !"PUBLISHED".equals(expert.getStatus()))
+                throw new BusinessException(ErrorCode.INVALID_REQUEST,"只能分配已发布的专家");
+        }
+        List<Long> before=rbac.expertIds(id);rbac.revokeExperts(id);
+        for(Long expertId:selected) rbac.assignExpert(id,expertId,operator);
+        audit(operator,"USER_EXPERT_ASSIGN",id,Map.of("before",before,"after",selected));
+        return view(users.selectById(id));
+    }
     @Transactional(isolation=Isolation.READ_COMMITTED) public void resetPassword(Long id,ResetPasswordDTO dto) {
         Long operator=administrator();lockAdministration();requireLocked(id);PasswordPolicy.validate(dto.password());
         rbac.changePassword(id,passwords.encode(dto.password()),true);audit(operator,"USER_PASSWORD_RESET",id,Map.of());disconnectAfterCommit(id);
@@ -103,7 +119,7 @@ public class UserManagementService {
     private void validateDevices(List<Long> ids) {
         for(Long id:new LinkedHashSet<>(ids)) if(devices.selectById(id)==null) throw new BusinessException(ErrorCode.INVALID_REQUEST,"机器不存在");
     }
-    private ManagedUserVO view(SysUserPO user) {return new ManagedUserVO(user,rbac.roles(user.getId()),rbac.deviceIds(user.getId()));}
+    private ManagedUserVO view(SysUserPO user) {return new ManagedUserVO(user,rbac.roles(user.getId()),rbac.deviceIds(user.getId()),rbac.expertIds(user.getId()));}
     private void audit(Long operator,String action,Long target,Object detail) {
         try {rbac.audit(operator,action,"USER",String.valueOf(target),json.writeValueAsString(detail));}
         catch(JsonProcessingException ex) {throw new IllegalStateException(ex);}

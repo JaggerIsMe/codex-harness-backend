@@ -12,6 +12,7 @@ Redis 使用 `spring.data.redis.*` 配置；外部配置中的旧 `spring.redis.
 
 1. 使用 `src/main/resources/db/schema.sql` 初始化 `newharness` 数据库（可交付副本：`../../docs/newharness.sql`）。全新数据库只执行完整初始化脚本，无需再执行历史迁移脚本。脚本不复制旧 `harness` 库的数据或管理员账号。
    已使用旧版 `schema.sql` 初始化过的数据库，先按需执行 `migration-agent-v1.sql`、`migration-dynamic-workspace.sql`、`migration-project-isolation.sql`，再按 [用户与机器授权上线说明](../../docs/user-device-rbac.md) 显式选择管理员，执行一次 `migration-user-device-rbac.sql`。
+   已有多个 Skill Version 的数据库在部署本版本前，还需执行一次 `migration-skill-single-active-version.sql`，将每个 Skill 的最新版本设为 ACTIVE，并停用旧版本。
 2. 在 PowerShell 中设置本地配置：
 
 ```powershell

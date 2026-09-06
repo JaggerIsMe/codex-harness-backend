@@ -26,6 +26,7 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class ConversationServiceImplTest {
+    private final com.myharness.codex.service.ExpertService experts=org.mockito.Mockito.mock(com.myharness.codex.service.ExpertService.class);
     @Mock private ConversationMapper conversationMapper;
     @Mock private AgentDeviceMapper deviceMapper;
     @Mock private AgentCommandGateway gateway;
@@ -40,7 +41,8 @@ class ConversationServiceImplTest {
         service = new ConversationServiceImpl(conversationMapper, deviceMapper, gateway, transactions,
                 approvalMapper, objectMapper, projectMapper,org.mockito.Mockito.mock(com.myharness.codex.service.stream.ConversationMessageStream.class),
                 org.mockito.Mockito.mock(com.myharness.codex.security.AuthorizationService.class),
-                org.mockito.Mockito.mock(com.myharness.codex.service.ConversationAttachmentService.class));
+                org.mockito.Mockito.mock(com.myharness.codex.service.ConversationAttachmentService.class),experts);
+        org.mockito.Mockito.lenient().when(experts.freeze(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any())).thenReturn(new com.myharness.codex.entity.dto.ExpertRuntimeDTO());
     }
 
     @Test

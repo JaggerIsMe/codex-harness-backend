@@ -2,6 +2,7 @@ package com.myharness.codex.service.impl;
 
 import com.myharness.codex.config.AgentProperties;
 import com.myharness.codex.entity.enums.ErrorCode;
+import com.myharness.codex.entity.dto.SkillVersionStatusDTO;
 import com.myharness.codex.entity.po.SkillPO;
 import com.myharness.codex.entity.po.SkillVersionPO;
 import com.myharness.codex.exception.BusinessException;
@@ -58,7 +59,7 @@ class SkillServiceImplTest {
     @Test
     void shouldRejectArchiveWithoutRootSkillManifest() throws Exception {
         SkillMapper mapper = mock(SkillMapper.class);
-        when(mapper.selectSkill(7L)).thenReturn(skill(7L, "demo"));
+        when(mapper.lockSkill(7L)).thenReturn(skill(7L, "demo"));
         SkillServiceImpl service = service(mapper);
 
         BusinessException error = assertThrows(BusinessException.class,
@@ -71,6 +72,39 @@ class SkillServiceImplTest {
         }
     }
 
+    @Test
+    void uploadingNewVersionDisablesEveryOlderVersion() throws Exception {
+        SkillMapper mapper = mock(SkillMapper.class);
+        SkillVersionPO oldActive = version(10L, 7L, "1.0.0", "ACTIVE");
+        SkillVersionPO oldDisabled = version(11L, 7L, "0.9.0", "DISABLED");
+        when(mapper.lockSkill(7L)).thenReturn(skill(7L, "demo"));
+        when(mapper.selectVersions(7L)).thenReturn(java.util.List.of(oldActive, oldDisabled));
+        doAnswer(invocation -> { ((SkillVersionPO) invocation.getArgument(0)).setId(12L); return 1; })
+                .when(mapper).insertVersion(any(SkillVersionPO.class));
+        when(mapper.selectVersion(12L)).thenReturn(version(12L, 7L, "1.1.0", "ACTIVE"));
+
+        service(mapper).uploadVersion(7L, "1.1.0", upload("SKILL.md", "# Demo"), 3L);
+
+        verify(mapper).disableActiveVersions(7L);
+        verify(mapper, never()).updateVersionStatus(any(), any());
+    }
+
+    @Test
+    void onlyLatestVersionCanBeReactivated() {
+        SkillMapper mapper = mock(SkillMapper.class);
+        when(mapper.lockSkill(7L)).thenReturn(skill(7L, "demo"));
+        when(mapper.selectVersion(10L)).thenReturn(version(10L, 7L, "1.0.0", "DISABLED"));
+        when(mapper.selectVersions(7L)).thenReturn(java.util.List.of(
+                version(12L, 7L, "2.0.0", "ACTIVE"), version(10L, 7L, "1.0.0", "DISABLED")));
+        SkillVersionStatusDTO input = new SkillVersionStatusDTO(); input.setStatus("ACTIVE");
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service(mapper).updateVersionStatus(7L, 10L, input));
+
+        assertEquals(ErrorCode.CONFLICT, error.getErrorCode());
+        verify(mapper, never()).updateVersionStatus(any(), any());
+    }
+
     private SkillServiceImpl service(SkillMapper mapper) {
         AgentProperties properties = new AgentProperties(); properties.setSkillStorageDir(temporaryDirectory.toString());
         return new SkillServiceImpl(mapper, properties);
@@ -78,6 +112,11 @@ class SkillServiceImplTest {
     private SkillPO skill(Long id, String name) {
         SkillPO value = new SkillPO(); value.setId(id); value.setSkillName(name); value.setDescription(""); value.setStatus("ENABLED");
         value.setVersionCount(0); value.setCreatedAt(LocalDateTime.now()); value.setUpdatedAt(LocalDateTime.now()); return value;
+    }
+    private SkillVersionPO version(Long id, Long skillId, String version, String status) {
+        SkillVersionPO value = new SkillVersionPO(); value.setId(id); value.setSkillId(skillId);
+        value.setVersion(version); value.setStatus(status); value.setSha256("a".repeat(64)); value.setFileSize(1L);
+        return value;
     }
     private MockMultipartFile upload(String name, String content) throws Exception {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();

@@ -35,6 +35,7 @@ import java.util.stream.Collectors;
 
 @Service
 public class ConversationServiceImpl implements ConversationService {
+    private final com.myharness.codex.service.ExpertService experts;
     private final ConversationMapper conversationMapper;
     private final com.myharness.codex.service.ConversationAttachmentService attachments;
     private final AgentDeviceMapper deviceMapper;
@@ -49,7 +50,9 @@ public class ConversationServiceImpl implements ConversationService {
     public ConversationServiceImpl(ConversationMapper conversationMapper,AgentDeviceMapper deviceMapper,
                                    AgentCommandGateway gateway,TransactionTemplate transactions,
                                    ApprovalMapper approvalMapper,ObjectMapper objectMapper,ProjectMapper projectMapper,ConversationMessageStream streams,
-                                   com.myharness.codex.security.AuthorizationService access, com.myharness.codex.service.ConversationAttachmentService attachments) {
+                                   com.myharness.codex.security.AuthorizationService access, com.myharness.codex.service.ConversationAttachmentService attachments,
+                                   com.myharness.codex.service.ExpertService experts) {
+        this.experts=experts;
         this.conversationMapper=conversationMapper; this.deviceMapper=deviceMapper; this.gateway=gateway; this.transactions=transactions;
         this.approvalMapper=approvalMapper; this.objectMapper=objectMapper;
         this.projectMapper=projectMapper;
@@ -64,10 +67,12 @@ public class ConversationServiceImpl implements ConversationService {
         AgentWorkspacePO workspace=deviceMapper.selectWorkspace(project.getWorkspaceId(),device.getId());
         if (workspace==null || !"ENABLED".equals(workspace.getStatus())) throw new BusinessException(ErrorCode.CONFLICT,"项目执行目录当前不可用");
         ConversationPO conversation=transactions.execute(status -> {
+            experts.lockProject(projectId);
             ConversationPO value=new ConversationPO();
             value.setUserId(operatorId); value.setDeviceId(device.getId()); value.setWorkspaceId(workspace.getId());
             value.setProjectId(project.getId());
             value.setTitle(trimOr(dto.getTitle(),"新会话")); value.setStatus("ACTIVE"); value.setLastActivityAt(LocalDateTime.now());
+            experts.bindAtCreation(value,dto.getExpertId());
             conversationMapper.insertConversation(value); return value;
         });
         Map<String,Object> payload=new LinkedHashMap<>();
@@ -96,6 +101,7 @@ public class ConversationServiceImpl implements ConversationService {
         final ConversationTurnPO turn;
         try {
             turn=transactions.execute(status -> {
+                Long projectRevision=experts.lockProject(projectId);
                 ConversationPO locked=conversationMapper.lockConversation(conversationId);
                 if(dto.getClientRequestId()!=null) {
                     ConversationTurnPO previous=conversationMapper.byClientRequest(conversationId,dto.getClientRequestId());
@@ -108,8 +114,12 @@ public class ConversationServiceImpl implements ConversationService {
                 if(!dto.getAttachmentIds().isEmpty() && !Boolean.TRUE.equals(online.getConversationAttachments()))
                     throw new BusinessException(ErrorCode.CONFLICT,"请升级 Agent 以支持会话附件");
                 ConversationTurnPO value=new ConversationTurnPO(); value.setConversationId(conversationId); value.setStatus("CREATED");
+                var runtime=experts.freeze(locked,projectRevision);
+                value.setExpertVersionId(runtime.getExpertVersionId()); value.setExpertName(runtime.getName());
+                value.setExpertRuntime(experts.write(runtime));
                 value.setClientRequestId(dto.getClientRequestId()); value.setRequestHash(requestHash);
                 value.setPreparationPhase(dto.getAttachmentIds().isEmpty() ? null : "DOWNLOADING");
+                if(!runtime.getSkills().isEmpty()) value.setPreparationPhase("EXPERT_SKILLS");
                 conversationMapper.insertTurn(value);
                 long sequence=conversationMapper.nextSequence(conversationId);
                 conversationMapper.insertMessage(conversationId,value.getId(),sequence,"USER","TEXT",dto.getMessage()==null ? "" : dto.getMessage());
@@ -124,10 +134,15 @@ public class ConversationServiceImpl implements ConversationService {
         payload.put("projectId",String.valueOf(conversation.getProjectId()));
         payload.put("workspaceName",conversation.getWorkspaceName());
         payload.put("codexThreadId",conversation.getCodexThreadId());
-        payload.put("recreateUnstartedThread",conversationMapper.canRecreateUnstartedThread(conversationId,turn.getId()));
+        payload.put("threadRuntimeKey",conversation.getExpertRuntimeKey());
+        var frozenRuntime=experts.runtime(turn.getExpertRuntime());
+        payload.put("recreateUnstartedThread",frozenRuntime!=null && frozenRuntime.getSchemaVersion()>=2
+                ? conversationMapper.canRecreateExpertThread(conversationId,turn.getId(),frozenRuntime.getRuntimeKey())
+                : conversationMapper.canRecreateUnstartedThread(conversationId,turn.getId()));
         if(!dto.getAttachmentIds().isEmpty()) payload.put("attachments",attachments.forTurn(turn.getId()));
         payload.put("message",dto.getMessage()==null ? "" : dto.getMessage()); payload.put("model",trimOr(dto.getModel(),null));
         payload.put("reasoningEffort",trimOr(dto.getReasoningEffort(),null));
+        payload.put("expertRuntime",frozenRuntime);
         try { gateway.send(conversation.getDeviceCode(),new AgentCommand("START_TURN",String.valueOf(turn.getId()),payload)); }
         catch (RuntimeException exception) {
             conversationMapper.finishTurn(turn.getId(),conversationId,conversation.getDeviceId(),"FAILED","AGENT_OFFLINE",

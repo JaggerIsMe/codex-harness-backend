@@ -25,6 +25,7 @@ import java.util.stream.Collectors;
 @org.springframework.security.access.prepost.PreAuthorize("hasAuthority('skill:manage')")
 public class SkillDeploymentServiceImpl implements SkillDeploymentService {
     private final SkillMapper mapper;
+    private final com.myharness.codex.mapper.ExpertMapper experts;
     private final ProjectMapper projectMapper;
     private final AgentCommandGateway gateway;
     private final AgentProperties properties;
@@ -32,7 +33,8 @@ public class SkillDeploymentServiceImpl implements SkillDeploymentService {
 
     public SkillDeploymentServiceImpl(SkillMapper mapper, ProjectMapper projectMapper,
                                       AgentCommandGateway gateway, AgentProperties properties,
-                                      com.myharness.codex.security.AuthorizationService access) {
+                                      com.myharness.codex.security.AuthorizationService access, com.myharness.codex.mapper.ExpertMapper experts) {
+        this.experts=experts;
         this.mapper = mapper; this.projectMapper = projectMapper; this.gateway = gateway; this.properties = properties;
         this.access=access;
     }
@@ -51,6 +53,13 @@ public class SkillDeploymentServiceImpl implements SkillDeploymentService {
                 throw new BusinessException(ErrorCode.CONFLICT, "项目工作区未就绪");
             deviceId = project.getDeviceId();
             access.requireDevice(operatorId,deviceId);
+            experts.lockProject(project.getId());
+            if(experts.activeTurns(project.getId())>0) throw new BusinessException(ErrorCode.CONFLICT,"项目有活动任务，不能变更 Skills");
+            var requested=mapper.selectVersion(versionId);
+            for(var required:experts.requiredSkills(project.getId())) {
+                if(requested!=null && required.getSkillId().equals(requested.getSkillId()) && !required.getId().equals(versionId))
+                    throw new BusinessException(ErrorCode.CONFLICT,"该 Skill 与项目专家固定版本冲突");
+            }
         }
         String scopeKey = "GLOBAL".equals(scopeType) ? "GLOBAL" : "PROJECT:" + project.getId();
         SkillDeploymentPO deployment = mapper.selectDeployable(deviceId, versionId, scopeType,
@@ -82,6 +91,12 @@ public class SkillDeploymentServiceImpl implements SkillDeploymentService {
         SkillDeploymentPO deployment = mapper.selectDeployment(deploymentId);
         if (deployment == null) throw new BusinessException(ErrorCode.NOT_FOUND, "Skill 下发记录不存在");
         requireAccessible(deployment, operatorId);
+        if("PROJECT".equals(deployment.getScopeType())) {
+            experts.lockProject(deployment.getProjectId());
+            if(experts.activeTurns(deployment.getProjectId())>0) throw new BusinessException(ErrorCode.CONFLICT,"项目有活动任务，不能移除 Skills");
+            if(experts.requiredSkills(deployment.getProjectId()).stream().anyMatch(v -> v.getId().equals(deployment.getSkillVersionId())))
+                throw new BusinessException(ErrorCode.CONFLICT,"该 Skill 仍被项目专家引用");
+        }
         if (!gateway.isOnline(deployment.getDeviceCode())) throw new BusinessException(ErrorCode.AGENT_OFFLINE);
         mapper.markRemoving(deploymentId, LocalDateTime.now());
         try {

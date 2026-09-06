@@ -22,8 +22,10 @@ class AttachmentTurnTest {
         gateway=mock(AgentCommandGateway.class);attachments=mock(ConversationAttachmentService.class);
         var tx=mock(TransactionTemplate.class);
         when(tx.execute(any())).thenAnswer(i -> ((TransactionCallback<?>)i.getArgument(0)).doInTransaction(mock(org.springframework.transaction.TransactionStatus.class)));
+        var experts=mock(com.myharness.codex.service.ExpertService.class);
+        when(experts.freeze(any(),any())).thenReturn(new com.myharness.codex.entity.dto.ExpertRuntimeDTO());
         service=new ConversationServiceImpl(mapper,devices,gateway,tx,mock(ApprovalMapper.class),new ObjectMapper(),projects,
-                mock(ConversationMessageStream.class),mock(AuthorizationService.class),attachments);
+                mock(ConversationMessageStream.class),mock(AuthorizationService.class),attachments,experts);
         conversation=new ConversationPO();conversation.setId(3L);conversation.setProjectId(2L);conversation.setUserId(1L);
         conversation.setDeviceId(4L);conversation.setDeviceCode("device");conversation.setWorkspaceName("workspace");conversation.setCodexThreadId("thread");
         when(mapper.selectOwnedConversation(2L,3L,1L)).thenReturn(conversation);when(mapper.lockConversation(3L)).thenReturn(conversation);

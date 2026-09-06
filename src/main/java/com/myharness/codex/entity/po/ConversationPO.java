@@ -3,6 +3,18 @@ package com.myharness.codex.entity.po;
 import java.time.LocalDateTime;
 
 public class ConversationPO {
+    private String expertRuntimeKey;
+    public String getExpertRuntimeKey() { return expertRuntimeKey; }
+    public void setExpertRuntimeKey(String value) { expertRuntimeKey=value; }
+    private Long selectedExpertId;
+    public Long getSelectedExpertId() {return selectedExpertId;}
+    public void setSelectedExpertId(Long value) {selectedExpertId=value;}
+    private Long selectedExpertVersionId;
+    public Long getSelectedExpertVersionId() {return selectedExpertVersionId;}
+    public void setSelectedExpertVersionId(Long value) {selectedExpertVersionId=value;}
+    private Long expertSelectionRevision = 0L;
+    public Long getExpertSelectionRevision() {return expertSelectionRevision;}
+    public void setExpertSelectionRevision(Long value) {expertSelectionRevision=value;}
     private Long id;
     private Long userId;
     private Long deviceId;

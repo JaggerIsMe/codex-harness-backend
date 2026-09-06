@@ -36,7 +36,7 @@ class SkillDeploymentServiceImplTest {
         when(gateway.isOnline("device-2")).thenReturn(true);
         AgentProperties properties = new AgentProperties(); properties.setPublicBaseUrl("http://localhost:9010");
         SkillDeploymentServiceImpl service = new SkillDeploymentServiceImpl(skills, projects, gateway, properties,
-                mock(com.myharness.codex.security.AuthorizationService.class));
+                mock(com.myharness.codex.security.AuthorizationService.class), mock(com.myharness.codex.mapper.ExpertMapper.class));
 
         service.deploy("PROJECT", 9L, 11L, 3L);
 

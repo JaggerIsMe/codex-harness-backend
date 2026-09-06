@@ -18,6 +18,7 @@ public class UserController {
     @PutMapping("/users/{id}") public ApiResponseVO<ManagedUserVO> update(@PathVariable Long id,@Valid @RequestBody UpdateUserDTO dto) {return ApiResponseVO.success(service.update(id,dto));}
     @PutMapping("/users/{id}/roles") public ApiResponseVO<ManagedUserVO> role(@PathVariable Long id,@Valid @RequestBody AssignRoleDTO dto) {return ApiResponseVO.success(service.role(id,dto));}
     @PutMapping("/users/{id}/devices") public ApiResponseVO<ManagedUserVO> devices(@PathVariable Long id,@Valid @RequestBody AssignDevicesDTO dto) {return ApiResponseVO.success(service.assignDevices(id,dto));}
+    @PutMapping("/users/{id}/experts") public ApiResponseVO<ManagedUserVO> experts(@PathVariable Long id,@Valid @RequestBody AssignExpertsDTO dto) {return ApiResponseVO.success(service.assignExperts(id,dto));}
     @PostMapping("/users/{id}/reset-password") public ApiResponseVO<Void> reset(@PathVariable Long id,@Valid @RequestBody ResetPasswordDTO dto) {service.resetPassword(id,dto);return ApiResponseVO.success(null);}
     @GetMapping("/roles") public ApiResponseVO<List<RoleVO>> roles() {return ApiResponseVO.success(service.roles());}
 }

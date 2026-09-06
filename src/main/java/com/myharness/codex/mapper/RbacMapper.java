@@ -44,6 +44,19 @@ public interface RbacMapper {
             "ON DUPLICATE KEY UPDATE status='ENABLED',assigned_by=VALUES(assigned_by)")
     int assignDevice(@Param("userId") Long userId,@Param("deviceId") Long deviceId,@Param("operatorId") Long operatorId);
 
+    @Select("SELECT expert_id FROM user_expert_assignment WHERE user_id=#{userId} AND status='ENABLED' ORDER BY expert_id")
+    List<Long> expertIds(Long userId);
+
+    @Select("SELECT COUNT(*) FROM user_expert_assignment WHERE user_id=#{userId} AND expert_id=#{expertId} AND status='ENABLED'")
+    int expertAssigned(@Param("userId") Long userId,@Param("expertId") Long expertId);
+
+    @Update("UPDATE user_expert_assignment SET status='DISABLED' WHERE user_id=#{userId}")
+    int revokeExperts(Long userId);
+
+    @Insert("INSERT INTO user_expert_assignment(user_id,expert_id,status,assigned_by) VALUES(#{userId},#{expertId},'ENABLED',#{operatorId}) " +
+            "ON DUPLICATE KEY UPDATE status='ENABLED',assigned_by=VALUES(assigned_by)")
+    int assignExpert(@Param("userId") Long userId,@Param("expertId") Long expertId,@Param("operatorId") Long operatorId);
+
     @Select("SELECT d.id,d.device_name,d.status,d.isolation_mode,EXISTS(SELECT 1 FROM agent_workspace_root w WHERE w.device_id=d.id AND w.status='ENABLED') provisioning_available " +
             "FROM agent_device d JOIN user_device_assignment a ON a.device_id=d.id AND a.user_id=#{userId} AND a.status='ENABLED' ORDER BY d.device_name,d.id")
     List<ExecutableDeviceVO> executableDevices(Long userId);

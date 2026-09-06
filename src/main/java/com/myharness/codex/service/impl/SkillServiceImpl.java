@@ -73,7 +73,8 @@ public class SkillServiceImpl implements SkillService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public SkillVersionVO uploadVersion(Long skillId, String version, MultipartFile file, Long operatorId) throws IOException {
-        requireSkill(skillId);
+        requireLockedSkill(skillId);
+        mapper.disableActiveVersions(skillId);
         return new SkillVersionVO(storeVersion(skillId, version, file, operatorId));
     }
 
@@ -92,8 +93,14 @@ public class SkillServiceImpl implements SkillService {
     @Override
     @Transactional
     public SkillVersionVO updateVersionStatus(Long skillId, Long versionId, SkillVersionStatusDTO dto) {
-        requireSkill(skillId);
+        requireLockedSkill(skillId);
         SkillVersionPO version = requireVersion(skillId, versionId);
+        if ("ACTIVE".equals(dto.getStatus())) {
+            List<SkillVersionPO> versions = mapper.selectVersions(skillId);
+            if (versions.isEmpty() || !versionId.equals(versions.getFirst().getId()))
+                throw new BusinessException(ErrorCode.CONFLICT, "只能激活该 Skill 的最新版本");
+            mapper.disableActiveVersions(skillId);
+        }
         mapper.updateVersionStatus(versionId, dto.getStatus());
         return new SkillVersionVO(requireVersion(skillId, versionId));
     }
@@ -181,6 +188,11 @@ public class SkillServiceImpl implements SkillService {
     }
     private SkillPO requireSkill(Long id) {
         SkillPO value = mapper.selectSkill(id);
+        if (value == null) throw new BusinessException(ErrorCode.NOT_FOUND, "Skill 不存在");
+        return value;
+    }
+    private SkillPO requireLockedSkill(Long id) {
+        SkillPO value = mapper.lockSkill(id);
         if (value == null) throw new BusinessException(ErrorCode.NOT_FOUND, "Skill 不存在");
         return value;
     }

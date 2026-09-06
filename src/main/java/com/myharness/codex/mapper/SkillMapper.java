@@ -25,6 +25,9 @@ public interface SkillMapper {
     @Select(SKILL_SELECT + "WHERE s.id=#{id}")
     SkillPO selectSkill(@Param("id") Long id);
 
+    @Select(SKILL_SELECT + "WHERE s.id=#{id} FOR UPDATE")
+    SkillPO lockSkill(@Param("id") Long id);
+
     @Select(SKILL_SELECT + "WHERE s.skill_name=#{skillName}")
     SkillPO selectSkillByName(@Param("skillName") String skillName);
 
@@ -49,6 +52,9 @@ public interface SkillMapper {
 
     @Update("UPDATE skill_version SET status=#{status} WHERE id=#{id}")
     int updateVersionStatus(@Param("id") Long id,@Param("status") String status);
+
+    @Update("UPDATE skill_version SET status='DISABLED' WHERE skill_id=#{skillId} AND status='ACTIVE'")
+    int disableActiveVersions(@Param("skillId") Long skillId);
 
     @Select("SELECT NULL id,#{deviceId} device_id,sv.id skill_version_id,sv.skill_id,s.skill_name,sv.version,sv.sha256," +
             "#{scopeType} scope_type,#{projectId} project_id,#{scopeKey} scope_key,NULL install_status,d.device_code,d.device_name " +
@@ -90,7 +96,9 @@ public interface SkillMapper {
             "(SELECT ds.install_status FROM device_skill ds WHERE ds.skill_version_id=sv.id AND ds.device_id=#{deviceId} " +
             "AND ds.install_status<>'REMOVED' ORDER BY ds.updated_at DESC LIMIT 1) install_status " +
             "FROM skill_version sv WHERE sv.id=#{versionId} AND EXISTS (SELECT 1 FROM device_skill ds " +
-            "WHERE ds.skill_version_id=sv.id AND ds.device_id=#{deviceId} AND ds.install_status<>'REMOVED')")
+            "WHERE ds.skill_version_id=sv.id AND ds.device_id=#{deviceId} AND ds.install_status<>'REMOVED') OR sv.id=#{versionId} AND sv.status='ACTIVE' AND EXISTS (" +
+            "SELECT 1 FROM project_expert_binding b JOIN codex_project p ON p.id=b.project_id JOIN expert_version v ON v.id=b.expert_version_id JOIN expert e ON e.id=b.expert_id " +
+            "WHERE p.device_id=#{deviceId} AND e.status<>'DISABLED' AND JSON_CONTAINS(v.skill_version_ids,CAST(#{versionId} AS JSON),'$'))")
     SkillDownloadPO selectDownload(@Param("versionId") Long versionId,@Param("deviceId") Long deviceId);
 
     @Update("UPDATE device_skill SET install_status=#{status},error_message=#{error}," +
