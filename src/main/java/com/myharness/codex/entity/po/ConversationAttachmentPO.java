@@ -1,6 +1,12 @@
 package com.myharness.codex.entity.po;
 
 public class ConversationAttachmentPO {
+    private String workspacePath;
+    private Long workspaceOperationId;
+    public String getWorkspacePath() {return workspacePath;}
+    public void setWorkspacePath(String value) {workspacePath=value;}
+    public Long getWorkspaceOperationId() {return workspaceOperationId;}
+    public void setWorkspaceOperationId(Long value) {workspaceOperationId=value;}
     private Long id;
     public Long getId() { return id; }
     public void setId(Long value) { id=value; }

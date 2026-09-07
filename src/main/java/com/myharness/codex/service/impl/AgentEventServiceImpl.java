@@ -27,6 +27,17 @@ import java.util.Map;
 
 @Service
 public class AgentEventServiceImpl implements AgentEventService {
+    private com.myharness.codex.service.WorkspaceFileService workspaceFiles;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setWorkspaceFiles(com.myharness.codex.service.WorkspaceFileService value) { workspaceFiles=value; }
+    private void afterFileCommit(Runnable work) {
+        if(workspaceFiles==null) return;
+        if(TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() { work.run(); }
+            });
+        } else work.run();
+    }
     private final AgentDeviceMapper deviceMapper;
     private final ConversationMapper conversationMapper;
     private final ApprovalMapper approvalMapper;
@@ -56,8 +67,22 @@ public class AgentEventServiceImpl implements AgentEventService {
                 deviceMapper.insertEvent(deviceId,envelope.getMessageId(),type.name(),envelope.getTimestamp()) != 1) return false;
         JsonNode payload = envelope.getPayload();
         LocalDateTime now = LocalDateTime.now();
+        if(type==AgentEventType.ERROR && java.util.Set.of("SYNC_WORKSPACE_TREE","CREATE_WORKSPACE_DIRECTORY","UPLOAD_WORKSPACE_FILE","PREPARE_WORKSPACE_DOWNLOAD").contains(payload.path("commandType").asText())) {
+            agentError(deviceId,envelope,payload,now);
+            return true; // File metadata is never broadcast to unrelated administrators.
+        }
         switch (type) {
+            case WORKSPACE_FILE_RESULT:
+                if(workspaceFiles!=null) {
+                    com.myharness.codex.entity.dto.WorkspaceFileResultDTO result;
+                    try {result=new com.fasterxml.jackson.databind.ObjectMapper().treeToValue(payload,com.myharness.codex.entity.dto.WorkspaceFileResultDTO.class);}
+                    catch(com.fasterxml.jackson.core.JsonProcessingException e) {throw new IllegalArgumentException("Invalid workspace result",e);}
+                    afterFileCommit(() -> workspaceFiles.result(deviceId,result));
+                }
+                return true;
             case REGISTER:
+                deviceMapper.workspaceFilesCapability(deviceId,payload.path("capabilities").isArray() && java.util.stream.StreamSupport.stream(payload.path("capabilities").spliterator(),false).anyMatch(v -> "WORKSPACE_FILES_V1".equals(v.asText())));
+                afterFileCommit(() -> workspaceFiles.reconnected(deviceId));
                 deviceMapper.attachmentCapability(deviceId,payload.path("capabilities").isArray() && java.util.stream.StreamSupport.stream(payload.path("capabilities").spliterator(),false).anyMatch(v -> "CONVERSATION_ATTACHMENTS_V1".equals(v.asText())));
                 deviceMapper.managedModelsCapability(deviceId,payload.path("capabilities").isArray() && java.util.stream.StreamSupport.stream(payload.path("capabilities").spliterator(),false).anyMatch(v -> "MANAGED_MODEL_PROVIDERS_V1".equals(v.asText())));
                 boolean expertV4=payload.path("capabilities").isArray() && java.util.stream.StreamSupport.stream(payload.path("capabilities").spliterator(),false).anyMatch(v -> "CONVERSATION_EXPERTS_V4".equals(v.asText()));
@@ -100,6 +125,8 @@ public class AgentEventServiceImpl implements AgentEventService {
         deviceMapper.markOffline(deviceId);
         for (com.myharness.codex.entity.po.ConversationTurnPO turn:conversationMapper.selectActiveTurnsForDevice(deviceId)) {
             streams.finish(deviceId,turn.getConversationId(),turn.getId(),"FAILED",null);
+            ConversationPO c=conversationMapper.selectConversation(turn.getConversationId());
+            if(c!=null) afterFileCommit(() -> workspaceFiles.refreshProject(c.getProjectId(),c.getUserId()));
         }
         conversationMapper.failActiveTurnsForDevice(deviceId,LocalDateTime.now());
         Map<String,Object> event=new LinkedHashMap<>(); event.put("type","DEVICE_OFFLINE"); event.put("deviceId",deviceId);
@@ -208,6 +235,9 @@ public class AgentEventServiceImpl implements AgentEventService {
                 payload.hasNonNull("lastEventSeq") ? payload.get("lastEventSeq").asLong() : null);
         conversationMapper.finishTurn(id(payload,"turnId"),id(payload,"conversationId"),deviceId,status,failureCode,
                 optionalText(payload,"reason",2000),now);
+        ConversationPO conversation=conversationMapper.selectConversation(id(payload,"conversationId"));
+        if(conversation!=null && deviceId.equals(conversation.getDeviceId()))
+            afterFileCommit(() -> workspaceFiles.refreshProject(conversation.getProjectId(),conversation.getUserId()));
     }
     private void skillResult(Long deviceId, AgentProtocolEnvelope envelope, JsonNode payload, boolean install, LocalDateTime now) {
         Long deploymentId=parseId(envelope.getCorrelationId(),"device skill correlationId");
@@ -217,6 +247,10 @@ public class AgentEventServiceImpl implements AgentEventService {
     }
     private void agentError(Long deviceId, AgentProtocolEnvelope envelope, JsonNode payload, LocalDateTime now) {
         String command=optionalText(payload,"commandType",32), code=optionalText(payload,"errorCode",64);
+        if(java.util.Set.of("SYNC_WORKSPACE_TREE","CREATE_WORKSPACE_DIRECTORY","UPLOAD_WORKSPACE_FILE","PREPARE_WORKSPACE_DOWNLOAD").contains(command==null ? "" : command)) {
+            afterFileCommit(() -> workspaceFiles.commandError(deviceId,envelope.getCorrelationId(),optionalText(payload,"message",1000)));
+            return;
+        }
         if ("START_THREAD".equals(command)) conversationMapper.failConversation(parseId(envelope.getCorrelationId(),"conversation correlationId"),deviceId,now);
         else if ("START_TURN".equals(command)) {
             Long turnId=parseId(envelope.getCorrelationId(),"turn correlationId");
@@ -225,6 +259,8 @@ public class AgentEventServiceImpl implements AgentEventService {
                 streams.finish(deviceId,turn.getConversationId(),turnId,"FAILED",null);
                 conversationMapper.finishTurn(turnId,turn.getConversationId(),deviceId,"FAILED",code,
                     optionalText(payload,"message",2000),now);
+                ConversationPO c=conversationMapper.selectConversation(turn.getConversationId());
+                if(c!=null) afterFileCommit(() -> workspaceFiles.refreshProject(c.getProjectId(),c.getUserId()));
             }
         } else if ("INSTALL_SKILL".equals(command) || "REMOVE_SKILL".equals(command)) {
             skillMapper.updateDeployment(parseId(envelope.getCorrelationId(),"device skill correlationId"),deviceId,

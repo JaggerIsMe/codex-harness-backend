@@ -17,6 +17,23 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
 
 class AgentEventServiceImplTest {
+    @Test void everyTerminalOutcomeRequestsProjectSyncAfterPersistence() {
+        for(String type:java.util.List.of("TURN_COMPLETED","TURN_FAILED","TURN_INTERRUPTED")) {
+            var devices=mock(AgentDeviceMapper.class);var conversations=mock(ConversationMapper.class);
+            var files=mock(com.myharness.codex.service.WorkspaceFileService.class);
+            var service=new AgentEventServiceImpl(devices,conversations,mock(ApprovalMapper.class),mock(SkillMapper.class),mock(ClientEventWebSocketHandler.class),streams,transactions);
+            service.setWorkspaceFiles(files);
+            var c=new ConversationPO();c.setId(5L);c.setDeviceId(3L);c.setUserId(9L);c.setProjectId(2L);
+            when(conversations.selectConversation(5L)).thenReturn(c);
+            var e=new AgentProtocolEnvelope();e.setType(type);e.setMessageId(type);e.setTimestamp(10L);
+            e.setPayload(new ObjectMapper().createObjectNode().put("conversationId","5").put("turnId","7"));
+            when(devices.insertEvent(3L,type,type,10L)).thenReturn(1);
+            assertTrue(service.process(3L,e));
+            var order=inOrder(conversations,files);
+            order.verify(conversations).finishTurn(eq(7L),eq(5L),eq(3L),anyString(),nullable(String.class),nullable(String.class),any());
+            order.verify(files).refreshProject(2L,9L);
+        }
+    }
     @Test void compatibleRuntimeUpdateMustMatchItsFrozenPendingTurnAndThread() {
         var devices=mock(AgentDeviceMapper.class);var conversations=mock(ConversationMapper.class);var clients=mock(ClientEventWebSocketHandler.class);
         var service=new AgentEventServiceImpl(devices,conversations,mock(ApprovalMapper.class),mock(SkillMapper.class),clients,streams,transactions);

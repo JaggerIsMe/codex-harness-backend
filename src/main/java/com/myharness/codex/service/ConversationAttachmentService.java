@@ -23,6 +23,9 @@ import java.util.*;
 /** Owns storage, authorization and attachment/message lifecycle. Call bind inside the Turn transaction. */
 @Service
 public class ConversationAttachmentService {
+    private WorkspaceFileService workspaceFiles;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setWorkspaceFiles(WorkspaceFileService value) { workspaceFiles=value; }
     private final ConversationAttachmentMapper mapper;
     private final ConversationMapper conversations;
     private final ProjectMapper projects;
@@ -43,7 +46,7 @@ public class ConversationAttachmentService {
         ConversationPO c=owned(pid,cid,uid);
         AgentDevicePO device=devices.selectById(c.getDeviceId());
         return new AttachmentLimitsVO(properties.getMaxFileBytes(),properties.getMaxFiles(),properties.getMaxTotalBytes(),
-                device!=null && Boolean.TRUE.equals(device.getConversationAttachments()));
+                device!=null && Boolean.TRUE.equals(device.getConversationAttachments()) && Boolean.TRUE.equals(device.getWorkspaceFiles()));
     }
 
     public ConversationAttachmentVO upload(Long pid,Long cid,Long uid,MultipartFile file) throws IOException {
@@ -69,6 +72,7 @@ public class ConversationAttachmentService {
             ConversationAttachmentPO p=new ConversationAttachmentPO();
             p.setUserId(uid); p.setProjectId(pid); p.setConversationId(cid); p.setFileName(name); p.setStorageKey(key);
             p.setMediaType("application/octet-stream"); p.setSizeBytes(total); p.setSha256(HexFormat.of().formatHex(digest.digest()));
+            p.setMediaType(detectMediaType(temporary));
             Files.move(temporary,target,StandardCopyOption.ATOMIC_MOVE);
             transactions.execute(tx -> {
                 conversations.lockConversation(cid);
@@ -76,7 +80,13 @@ public class ConversationAttachmentService {
                 List<ConversationAttachmentPO> pending=mapper.pending(cid);
                 if(pending.size()>=properties.getMaxFiles() || pending.stream().mapToLong(ConversationAttachmentPO::getSizeBytes).sum()+p.getSizeBytes()>properties.getMaxTotalBytes())
                     throw invalid("待发送附件数量或总大小超过限制，请先移除附件");
-                mapper.insert(p); return null;
+                mapper.insert(p);
+                if(workspaceFiles!=null) {
+                    var operation=workspaceFiles.uploadAttachment(p);
+                    p.setWorkspacePath(p.getFileName());p.setWorkspaceOperationId(Long.valueOf(operation.id()));
+                    mapper.workspace(p.getId(),p.getWorkspacePath(),p.getWorkspaceOperationId());
+                }
+                return null;
             });
             stored=true; return new ConversationAttachmentVO(p);
         } finally {
@@ -98,6 +108,7 @@ public class ConversationAttachmentService {
             if(mapper.markDeleted(aid)!=1) throw invalid("已发送的附件不能移除");
             return value;
         });
+        if(workspaceFiles!=null) workspaceFiles.detachedAttachment(p.getWorkspaceOperationId());
         Files.deleteIfExists(path(p)); mapper.purge(aid);
     }
 
@@ -111,6 +122,7 @@ public class ConversationAttachmentService {
             if(p==null || !c.getId().equals(p.getConversationId()) || !c.getUserId().equals(p.getUserId())
                     || !c.getProjectId().equals(p.getProjectId()) || !List.of("PENDING","ATTACHED").contains(p.getStatus())) throw missing();
             total+=p.getSizeBytes(); if(p.getSizeBytes()>properties.getMaxFileBytes() || total>properties.getMaxTotalBytes()) throw invalid("附件总大小超限");
+            if(workspaceFiles!=null) workspaceFiles.requireUploaded(p);
             values.add(p);
         }
         values.sort(Comparator.comparingInt(p -> ids.indexOf(p.getId())));
@@ -177,6 +189,16 @@ public class ConversationAttachmentService {
     private static BusinessException missing(){return new BusinessException(ErrorCode.NOT_FOUND,"附件不存在或不可访问");}
     private static MessageDigest digest(){try{return MessageDigest.getInstance("SHA-256");}catch(Exception e){throw new IllegalStateException(e);}}
 
+    private static String detectMediaType(Path file) throws IOException {
+        byte[] h;try(var input=Files.newInputStream(file)){h=input.readNBytes(12);}
+        if(h.length>=8 && h[0]==(byte)137 && h[1]==80 && h[2]==78 && h[3]==71 && h[4]==13 && h[5]==10 && h[6]==26 && h[7]==10) return "image/png";
+        if(h.length>=3 && h[0]==(byte)255 && h[1]==(byte)216 && h[2]==(byte)255) return "image/jpeg";
+        String header=new String(h,java.nio.charset.StandardCharsets.ISO_8859_1);
+        if(header.startsWith("GIF87a") || header.startsWith("GIF89a")) return "image/gif";
+        if(header.startsWith("RIFF") && header.length()>=12 && header.substring(8,12).equals("WEBP")) return "image/webp";
+        return "application/octet-stream";
+    }
+
     @Scheduled(fixedDelayString="${harness.attachments.cleanup-ms:3600000}")
     public void cleanup() {
         for(ConversationAttachmentPO p:mapper.expired(LocalDateTime.now().minusHours(24))) {
@@ -186,7 +208,7 @@ public class ConversationAttachmentService {
                     ConversationAttachmentPO current=mapper.lock(p.getId());
                     return current!=null && ("DELETED".equals(current.getStatus()) || mapper.markDeleted(p.getId())==1);
                 }));
-                if(deleted) {Files.deleteIfExists(path(p)); mapper.purge(p.getId());}
+                if(deleted) {if(workspaceFiles!=null) workspaceFiles.detachedAttachment(p.getWorkspaceOperationId());Files.deleteIfExists(path(p)); mapper.purge(p.getId());}
             } catch(Exception e) {org.slf4j.LoggerFactory.getLogger(getClass()).warn("Attachment cleanup will retry {}",p.getId(),e);}
         }
     }

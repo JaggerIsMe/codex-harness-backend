@@ -8,6 +8,10 @@ import org.apache.ibatis.annotations.Select;
 import java.util.List;
 
 public interface ProjectMapper {
+    @Select(PROJECT_SELECT + "WHERE EXISTS (SELECT 1 FROM conversation c JOIN conversation_turn t ON t.conversation_id=c.id WHERE c.project_id=p.id AND t.status='CREATED' AND t.created_at<#{deadline} AND (t.preparation_phase IS NULL OR t.created_at<DATE_SUB(#{now}, INTERVAL 180 SECOND)))")
+    List<ProjectPO> timedOutTurnProjects(@Param("deadline") java.time.LocalDateTime deadline,@Param("now") java.time.LocalDateTime now);
+    @Select(PROJECT_SELECT + "WHERE p.device_id=#{deviceId} AND p.status='ACTIVE'")
+    List<ProjectPO> selectForDevice(Long deviceId);
     String PROJECT_SELECT = "SELECT p.id,p.user_id,p.device_id,p.workspace_id,p.project_name,p.status,p.isolation_mode,p.created_at,p.request_key,w.failure_code,w.failure_message," +
             "d.device_code,d.device_name,d.status device_status,w.workspace_name,w.root_path,w.status workspace_status," +
             "(SELECT COUNT(*) FROM conversation c WHERE c.project_id=p.id) conversation_count " +

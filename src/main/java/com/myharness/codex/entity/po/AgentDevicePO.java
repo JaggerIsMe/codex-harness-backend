@@ -3,6 +3,9 @@ package com.myharness.codex.entity.po;
 import java.time.LocalDateTime;
 
 public class AgentDevicePO {
+    private Boolean workspaceFiles;
+    public Boolean getWorkspaceFiles() { return workspaceFiles; }
+    public void setWorkspaceFiles(Boolean value) { workspaceFiles=value; }
     private Boolean managedModels;
     public Boolean getManagedModels(){return managedModels;}
     public void setManagedModels(Boolean value){managedModels=value;}

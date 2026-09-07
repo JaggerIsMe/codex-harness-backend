@@ -19,6 +19,8 @@ public class UserSecurityConfig {
         http.csrf(csrf->csrf.disable()).sessionManagement(s->s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .formLogin(f->f.disable()).httpBasic(b->b.disable()).logout(l->l.disable())
             .authorizeHttpRequests(a->a
+                .requestMatchers(HttpMethod.GET,"/api/v1/agent/workspace-file-operations/*","/api/v1/agent/workspace-file-operations/*/content").permitAll()
+                .requestMatchers(HttpMethod.PUT,"/api/v1/agent/workspace-file-operations/*/content").permitAll()
                 .requestMatchers(HttpMethod.POST,"/api/v1/auth/login","/api/v1/agent/enroll").permitAll()
                 .requestMatchers(HttpMethod.GET,"/api/v1/agent/skill-versions/*/download","/api/v1/agent/turns/*/attachments","/api/v1/agent/turns/*/attachments/*/download","/ws/client","/ws/agent").permitAll()
                 // Artifact endpoints authenticate Device credentials and Turn ownership in their service.

@@ -35,6 +35,17 @@ import java.util.stream.Collectors;
 
 @Service
 public class ConversationServiceImpl implements ConversationService {
+    private com.myharness.codex.service.WorkspaceFileService workspaceFiles;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setWorkspaceFiles(com.myharness.codex.service.WorkspaceFileService value) {workspaceFiles=value;}
+    private void refreshFiles(ConversationPO c) {
+        if(workspaceFiles==null) return;
+        if(org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(new org.springframework.transaction.support.TransactionSynchronization() {
+                @Override public void afterCommit() {workspaceFiles.refreshProject(c.getProjectId(),c.getUserId());}
+            });
+        } else workspaceFiles.refreshProject(c.getProjectId(),c.getUserId());
+    }
     private final com.myharness.codex.service.ExpertService experts;
     private final com.myharness.codex.service.ModelConfigurationService models;
     private final ConversationMapper conversationMapper;
@@ -164,7 +175,7 @@ public class ConversationServiceImpl implements ConversationService {
         try { gateway.send(conversation.getDeviceCode(),new AgentCommand("START_TURN",String.valueOf(turn.getId()),payload)); }
         catch (RuntimeException exception) {
             conversationMapper.finishTurn(turn.getId(),conversationId,conversation.getDeviceId(),"FAILED","AGENT_OFFLINE",
-                    "Agent command could not be delivered",LocalDateTime.now()); throw exception;
+                    "Agent command could not be delivered",LocalDateTime.now()); refreshFiles(conversation);throw exception;
         }
         return new TurnVO(conversationMapper.selectTurn(turn.getId()));
     }
@@ -178,6 +189,7 @@ public class ConversationServiceImpl implements ConversationService {
         Map<String,Object> payload=new LinkedHashMap<>(); payload.put("conversationId",String.valueOf(conversationId)); payload.put("turnId",String.valueOf(turnId));
         if("CREATED".equals(turn.getStatus())) {
             conversationMapper.finishTurn(turnId,conversationId,conversation.getDeviceId(),"INTERRUPTED",null,"用户取消文件准备",LocalDateTime.now());
+            refreshFiles(conversation);
         }
         gateway.send(conversation.getDeviceCode(),new AgentCommand("INTERRUPT_TURN",String.valueOf(turnId),payload));
     }

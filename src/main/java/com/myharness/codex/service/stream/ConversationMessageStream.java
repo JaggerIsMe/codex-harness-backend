@@ -21,6 +21,9 @@ import java.util.stream.Collectors;
 /** Single-backend deployment: all stream mutations and recovery reads cross this seam. */
 @Service
 public class ConversationMessageStream {
+    private com.myharness.codex.service.WorkspaceFileService workspaceFiles;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setWorkspaceFiles(com.myharness.codex.service.WorkspaceFileService value) {workspaceFiles=value;}
     private static final Logger LOG=LoggerFactory.getLogger(ConversationMessageStream.class);
     private final Object[] locks=new Object[256];
     private final ConversationMapper mapper;
@@ -184,6 +187,10 @@ public class ConversationMessageStream {
                             if(active(turn)) {
                                 ConversationPO conversation=mapper.selectConversation(conversationId);
                                 mapper.finishTurn(turnId,conversationId,conversation.getDeviceId(),target,"MESSAGE_RECOVERY","Recovered pending terminal persistence",LocalDateTime.now());
+                                if(workspaceFiles!=null && TransactionSynchronizationManager.isSynchronizationActive())
+                                    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                                        @Override public void afterCommit() {workspaceFiles.refreshProject(conversation.getProjectId(),conversation.getUserId());}
+                                    });
                             }
                             return null;
                         });

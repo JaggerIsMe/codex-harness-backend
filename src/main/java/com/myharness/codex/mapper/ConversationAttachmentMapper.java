@@ -4,6 +4,8 @@ import org.apache.ibatis.annotations.*;
 import java.util.List;
 import java.time.LocalDateTime;
 public interface ConversationAttachmentMapper {
+    @Update("UPDATE conversation_attachment SET workspace_path=#{path},workspace_operation_id=#{operationId} WHERE id=#{id}")
+    int workspace(@Param("id") Long id,@Param("path") String path,@Param("operationId") Long operationId);
     @Insert("INSERT INTO conversation_attachment(user_id,project_id,conversation_id,file_name,storage_key,media_type,size_bytes,sha256,status) VALUES(#{userId},#{projectId},#{conversationId},#{fileName},#{storageKey},#{mediaType},#{sizeBytes},#{sha256},'PENDING')")
     @Options(useGeneratedKeys=true,keyProperty="id")
     int insert(ConversationAttachmentPO value);
