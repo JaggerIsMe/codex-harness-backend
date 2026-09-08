@@ -170,7 +170,7 @@ public class ConversationServiceImpl implements ConversationService {
                 : conversationMapper.canRecreateUnstartedThread(conversationId,turn.getId()));
         if(!dto.getAttachmentIds().isEmpty()) payload.put("attachments",attachments.forTurn(turn.getId()));
         payload.put("message",dto.getMessage()==null ? "" : dto.getMessage());
-        if(models!=null)payload.put("modelRuntime",models.runtimeForVersion(turn.getModelConfigurationVersionId()));
+        if(models!=null)payload.put("modelRuntime",models.runtimeForSnapshot(turn.getModelRuntime()));
         payload.put("expertRuntime",frozenRuntime);
         try { gateway.send(conversation.getDeviceCode(),new AgentCommand("START_TURN",String.valueOf(turn.getId()),payload)); }
         catch (RuntimeException exception) {

@@ -3,7 +3,8 @@ package com.myharness.codex.entity.dto;
 import java.util.List;
 
 public class ModelRuntimeDTO extends ModelRuntimeSpecDTO {
-    private int schemaVersion=1;
+    private int schemaVersion=2;
+    private String runtimeMode;
     private Long configurationId;
     private Long configurationVersionId;
     private Long versionNo;
@@ -14,6 +15,8 @@ public class ModelRuntimeDTO extends ModelRuntimeSpecDTO {
     private String apiKey;
     public int getSchemaVersion(){return schemaVersion;}
     public void setSchemaVersion(int value){schemaVersion=value;}
+    public String getRuntimeMode(){return runtimeMode;}
+    public void setRuntimeMode(String value){runtimeMode=value;}
     public Long getConfigurationId(){return configurationId;}
     public void setConfigurationId(Long value){configurationId=value;}
     public Long getConfigurationVersionId(){return configurationVersionId;}
