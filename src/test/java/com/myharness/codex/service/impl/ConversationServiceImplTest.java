@@ -49,17 +49,46 @@ class ConversationServiceImplTest {
     void returnsRecentConversationsForCurrentUser() {
         ConversationPO first = conversation(8L, 3L, "最近会话");
         ConversationPO second = conversation(6L, 3L, "较早会话");
+        first.setLatestTurnId(25L); first.setLatestTurnStatus("RUNNING");
+        second.setLatestTurnId(18L); second.setLatestTurnStatus("COMPLETED");
+        second.setLatestTurnHasIncompleteMessage(true);
         com.myharness.codex.entity.po.ProjectPO project = new com.myharness.codex.entity.po.ProjectPO();
         project.setId(5L); project.setStatus("ACTIVE");
         project.setWorkspaceStatus("ENABLED");project.setRootPath("D:/allowed");
         when(projectMapper.selectOwned(5L,3L)).thenReturn(project);
-        when(conversationMapper.selectProjectConversations(5L,3L)).thenReturn(Arrays.asList(first, second));
+        when(conversationMapper.selectProjectConversations(5L,3L,"",20,0L)).thenReturn(Arrays.asList(first, second));
+        when(conversationMapper.countProjectConversations(5L,3L,"")).thenReturn(2L);
 
-        List<ConversationVO> result = service.getProjectConversations(5L,3L);
+        var page = service.getProjectConversations(5L,3L,1,20,null);
+        List<ConversationVO> result = page.items();
 
         assertEquals(2, result.size());
+        assertEquals(2L, page.total());
         assertEquals(8L, result.get(0).getId());
         assertEquals("较早会话", result.get(1).getTitle());
+        var json = objectMapper.valueToTree(result);
+        assertEquals(25L,json.get(0).path("latestTurnId").asLong());
+        assertEquals("RUNNING",json.get(0).path("latestTurnStatus").asText());
+        assertEquals("COMPLETED",json.get(1).path("latestTurnStatus").asText());
+        assertEquals(true,json.get(1).path("latestTurnHasIncompleteMessage").asBoolean());
+        org.mockito.Mockito.verify(conversationMapper,org.mockito.Mockito.never()).selectLatestTurn(org.mockito.ArgumentMatchers.any());
+        org.mockito.Mockito.verify(conversationMapper,org.mockito.Mockito.never()).selectActiveTurn(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void exposesLatestTurnFailureInOwnedConversationDetail() {
+        ConversationPO conversation = conversation(8L,3L,"会话");
+        conversation.setLatestTurnId(25L);
+        conversation.setLatestTurnStatus("FAILED");
+        conversation.setLatestTurnFailureMessage("Agent command timed out");
+        when(conversationMapper.selectOwnedConversation(5L,8L,3L)).thenReturn(conversation);
+
+        var json = objectMapper.valueToTree(service.getConversation(5L,8L,3L));
+
+        assertEquals(25L,json.path("latestTurnId").asLong());
+        assertEquals("FAILED",json.path("latestTurnStatus").asText());
+        assertEquals("Agent command timed out",json.path("latestTurnFailureMessage").asText());
+        org.mockito.Mockito.verify(conversationMapper,org.mockito.Mockito.never()).selectLatestTurn(org.mockito.ArgumentMatchers.any());
     }
 
     @Test

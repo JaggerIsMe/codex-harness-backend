@@ -30,6 +30,10 @@ public class ConversationPO {
     private String deviceCode;
     private String workspaceName;
     private String projectName;
+    private Long latestTurnId;
+    private String latestTurnStatus;
+    private String latestTurnFailureMessage;
+    private boolean latestTurnHasIncompleteMessage;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -55,4 +59,12 @@ public class ConversationPO {
     public void setWorkspaceName(String value) { this.workspaceName = value; }
     public String getProjectName() { return projectName; }
     public void setProjectName(String value) { projectName=value; }
+    public Long getLatestTurnId() { return latestTurnId; }
+    public void setLatestTurnId(Long value) { latestTurnId=value; }
+    public String getLatestTurnStatus() { return latestTurnStatus; }
+    public void setLatestTurnStatus(String value) { latestTurnStatus=value; }
+    public String getLatestTurnFailureMessage() { return latestTurnFailureMessage; }
+    public void setLatestTurnFailureMessage(String value) { latestTurnFailureMessage=value; }
+    public boolean getLatestTurnHasIncompleteMessage() { return latestTurnHasIncompleteMessage; }
+    public void setLatestTurnHasIncompleteMessage(boolean value) { latestTurnHasIncompleteMessage=value; }
 }

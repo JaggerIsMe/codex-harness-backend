@@ -23,6 +23,14 @@ public class GlobalExceptionHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
+    @ExceptionHandler({org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class,
+            org.springframework.web.bind.MissingServletRequestParameterException.class})
+    public ResponseEntity<ApiResponseVO<Void>> handleInvalidRequestParameter(Exception exception) {
+        ErrorCode errorCode = ErrorCode.INVALID_REQUEST;
+        return ResponseEntity.status(errorCode.getHttpStatus())
+                .body(ApiResponseVO.<Void>error(errorCode.getCode(), "请求参数格式不正确"));
+    }
+
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponseVO<Void>> handleBusinessException(BusinessException exception) {
         ErrorCode errorCode = exception.getErrorCode();

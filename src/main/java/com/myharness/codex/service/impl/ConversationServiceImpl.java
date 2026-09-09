@@ -2,6 +2,7 @@ package com.myharness.codex.service.impl;
 
 import com.myharness.codex.entity.dto.CreateConversationDTO;
 import com.myharness.codex.entity.dto.StartTurnDTO;
+import com.myharness.codex.entity.dto.WorkspacePageQuery;
 import com.myharness.codex.entity.enums.ErrorCode;
 import com.myharness.codex.entity.po.AgentDevicePO;
 import com.myharness.codex.entity.po.AgentWorkspacePO;
@@ -23,6 +24,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myharness.codex.service.ConversationService;
 import com.myharness.codex.service.stream.ConversationMessageStream;
 import com.myharness.codex.entity.vo.MessageStateVO;
+import com.myharness.codex.entity.vo.PageVO;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -31,6 +33,7 @@ import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.List;
+import java.util.HashSet;
 import java.util.stream.Collectors;
 
 @Service
@@ -196,9 +199,22 @@ public class ConversationServiceImpl implements ConversationService {
 
     @Override public ConversationVO getConversation(Long projectId,Long conversationId,Long operatorId) { return new ConversationVO(requireOwned(projectId,conversationId,operatorId)); }
 
-    @Override public List<ConversationVO> getProjectConversations(Long projectId,Long operatorId) {
+    @Override public PageVO<ConversationVO> getProjectConversations(Long projectId,Long operatorId,int page,int size,String keyword) {
         requireActiveProject(projectId,operatorId);
-        return conversationMapper.selectProjectConversations(projectId,operatorId).stream().map(ConversationVO::new).collect(Collectors.toList());
+        var query=new WorkspacePageQuery(page,size,keyword);
+        long total=conversationMapper.countProjectConversations(projectId,operatorId,query.keyword());
+        List<ConversationVO> items=conversationMapper.selectProjectConversations(projectId,operatorId,query.keyword(),query.size(),query.offset()).stream().map(ConversationVO::new).toList();
+        return new PageVO<>(items,total,query.page(),query.size());
+    }
+
+    @Override public List<ConversationVO> getConversationStatuses(Long projectId,Long operatorId,List<Long> ids) {
+        requireActiveProject(projectId,operatorId);
+        if(ids==null || ids.isEmpty() || ids.size()>100 || ids.stream().anyMatch(id -> id==null || id<=0)
+                || new HashSet<>(ids).size()!=ids.size())
+            throw new BusinessException(ErrorCode.INVALID_REQUEST,"请提供 1–100 个不重复的正整数会话 ID");
+        List<ConversationPO> values=conversationMapper.selectConversationStatuses(projectId,operatorId,ids);
+        if(values.size()!=ids.size()) throw new BusinessException(ErrorCode.NOT_FOUND,"会话不存在");
+        return values.stream().map(ConversationVO::new).toList();
     }
 
     @Override public TurnVO getActiveTurn(Long projectId,Long conversationId,Long operatorId) {

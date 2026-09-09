@@ -1,9 +1,11 @@
 package com.myharness.codex.service.impl;
 
 import com.myharness.codex.entity.dto.CreateProjectDTO;
+import com.myharness.codex.entity.dto.WorkspacePageQuery;
 import com.myharness.codex.entity.enums.ErrorCode;
 import com.myharness.codex.entity.po.*;
 import com.myharness.codex.entity.vo.ProjectVO;
+import com.myharness.codex.entity.vo.PageVO;
 import com.myharness.codex.exception.BusinessException;
 import com.myharness.codex.gateway.*;
 import com.myharness.codex.mapper.*;
@@ -72,8 +74,12 @@ public class ProjectServiceImpl implements ProjectService {
     @Override public ProjectVO getProject(Long id,Long userId) {
         access.requirePermission(userId,"project:read");return new ProjectVO(requireOwned(id,userId));
     }
-    @Override public List<ProjectVO> getProjects(Long userId) {
-        access.requirePermission(userId,"project:read");return projects.selectOwnedProjects(userId).stream().map(ProjectVO::new).toList();
+    @Override public PageVO<ProjectVO> getProjects(Long userId,int page,int size,String keyword) {
+        access.requirePermission(userId,"project:read");
+        var query=new WorkspacePageQuery(page,size,keyword);
+        long total=projects.countOwnedProjects(userId,query.keyword());
+        List<ProjectVO> items=projects.selectOwnedProjects(userId,query.keyword(),query.size(),query.offset()).stream().map(ProjectVO::new).toList();
+        return new PageVO<>(items,total,query.page(),query.size());
     }
     private ProjectPO requireOwned(Long id,Long userId) {
         ProjectPO value=projects.selectOwned(id,userId);

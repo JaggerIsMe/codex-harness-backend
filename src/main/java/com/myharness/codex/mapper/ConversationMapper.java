@@ -13,6 +13,20 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public interface ConversationMapper {
+    String LATEST_TURN_COLUMNS = ",latest_turn.id latest_turn_id,latest_turn.status latest_turn_status," +
+            "latest_turn.failure_message latest_turn_failure_message," +
+            "EXISTS(SELECT 1 FROM conversation_message latest_message WHERE latest_message.turn_id=latest_turn.id " +
+            "AND latest_message.role='ASSISTANT' AND latest_message.status='INCOMPLETE') latest_turn_has_incomplete_message";
+    String LATEST_TURN_JOIN = " LEFT JOIN conversation_turn latest_turn ON latest_turn.id=" +
+            "(SELECT MAX(candidate.id) FROM conversation_turn candidate WHERE candidate.conversation_id=c.id) ";
+    String CONVERSATION_FROM = " FROM conversation c JOIN agent_device d ON d.id=c.device_id " +
+            "JOIN agent_workspace w ON w.id=c.workspace_id JOIN codex_project p ON p.id=c.project_id ";
+    String CONVERSATION_SELECT = "SELECT c.id,c.user_id,c.device_id,c.workspace_id,c.project_id,c.title,c.codex_thread_id,c.status,c.last_activity_at," +
+            "c.selected_expert_id,c.selected_expert_version_id,c.expert_selection_revision,c.expert_runtime_key,c.model_runtime_key," +
+            "d.device_code,w.workspace_name,p.project_name" + LATEST_TURN_COLUMNS + CONVERSATION_FROM + LATEST_TURN_JOIN;
+    String PROJECT_CONVERSATION_FILTER = "WHERE c.user_id=#{userId} AND c.project_id=#{projectId} " +
+            "AND (#{keyword}='' OR LOCATE(#{keyword},c.title)>0 OR " + ProjectMapper.PROJECT_KEYWORD_MATCH + ") ";
+
     // Compare the old binding and the immutable pending Turn snapshot in one write.
     @Update("UPDATE conversation SET codex_thread_id=#{next},expert_runtime_key=#{key},last_activity_at=#{now} " +
             "WHERE id=#{id} AND device_id=#{deviceId} AND status='ACTIVE' AND codex_thread_id=#{previous} " +
@@ -70,16 +84,24 @@ public interface ConversationMapper {
             "JOIN agent_workspace w ON w.id=c.workspace_id JOIN codex_project p ON p.id=c.project_id WHERE c.id=#{id}")
     ConversationPO selectConversation(@Param("id") Long id);
 
-    @Select("SELECT c.id,c.user_id,c.device_id,c.workspace_id,c.project_id,c.title,c.codex_thread_id,c.status,c.last_activity_at,c.selected_expert_id,c.selected_expert_version_id,c.expert_selection_revision,c.expert_runtime_key,c.model_runtime_key," +
-            "d.device_code,w.workspace_name,p.project_name FROM conversation c JOIN agent_device d ON d.id=c.device_id " +
-            "JOIN agent_workspace w ON w.id=c.workspace_id JOIN codex_project p ON p.id=c.project_id " +
-            "WHERE c.user_id=#{userId} AND c.project_id=#{projectId} " +
-            "ORDER BY c.last_activity_at DESC,c.id DESC LIMIT 100")
-    List<ConversationPO> selectProjectConversations(@Param("projectId") Long projectId,@Param("userId") Long userId);
+    @Select(CONVERSATION_SELECT + PROJECT_CONVERSATION_FILTER + "ORDER BY c.last_activity_at DESC,c.id DESC LIMIT #{limit} OFFSET #{offset}")
+    List<ConversationPO> selectProjectConversations(@Param("projectId") Long projectId,@Param("userId") Long userId,
+            @Param("keyword") String keyword,@Param("limit") int limit,@Param("offset") long offset);
+
+    @Select("SELECT COUNT(*)" + CONVERSATION_FROM + PROJECT_CONVERSATION_FILTER)
+    long countProjectConversations(@Param("projectId") Long projectId,@Param("userId") Long userId,@Param("keyword") String keyword);
+
+    @Select("<script>" + CONVERSATION_SELECT + "WHERE c.user_id=#{userId} AND c.project_id=#{projectId} " +
+            "<choose><when test='ids != null and !ids.isEmpty()'>AND c.id IN " +
+            "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach>" +
+            "</when><otherwise>AND 1=0</otherwise></choose> ORDER BY c.last_activity_at DESC,c.id DESC</script>")
+    List<ConversationPO> selectConversationStatuses(@Param("projectId") Long projectId,@Param("userId") Long userId,
+            @Param("ids") List<Long> ids);
 
     @Select("SELECT c.id,c.user_id,c.device_id,c.workspace_id,c.project_id,c.title,c.codex_thread_id,c.status,c.last_activity_at,c.selected_expert_id,c.selected_expert_version_id,c.expert_selection_revision,c.expert_runtime_key,c.model_runtime_key," +
-            "d.device_code,w.workspace_name,p.project_name FROM conversation c JOIN agent_device d ON d.id=c.device_id " +
+            "d.device_code,w.workspace_name,p.project_name" + LATEST_TURN_COLUMNS + " FROM conversation c JOIN agent_device d ON d.id=c.device_id " +
             "JOIN agent_workspace w ON w.id=c.workspace_id JOIN codex_project p ON p.id=c.project_id " +
+            LATEST_TURN_JOIN +
             "WHERE c.id=#{id} AND c.project_id=#{projectId} AND c.user_id=#{userId}")
     ConversationPO selectOwnedConversation(@Param("projectId") Long projectId,@Param("id") Long id,@Param("userId") Long userId);
 

@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
 import java.util.List;
 import com.myharness.codex.entity.vo.MessageStateVO;
+import com.myharness.codex.entity.vo.PageVO;
 
 @RestController
 @RequestMapping("/api/v1/projects/{projectId}/conversations")
@@ -23,8 +24,14 @@ public class ConversationController {
     @PostMapping public ApiResponseVO<ConversationVO> create(@PathVariable Long projectId,@Valid @RequestBody CreateConversationDTO dto) {
         return ApiResponseVO.success(service.createConversation(projectId,dto,UserContext.requireCurrentUser().getId()));
     }
-    @GetMapping public ApiResponseVO<List<ConversationVO>> list(@PathVariable Long projectId) {
-        return ApiResponseVO.success(service.getProjectConversations(projectId,UserContext.requireCurrentUser().getId()));
+    @GetMapping public ApiResponseVO<PageVO<ConversationVO>> list(@PathVariable Long projectId,
+            @RequestParam(defaultValue="1") int page,@RequestParam(defaultValue="10") int size,
+            @RequestParam(required=false) String keyword) {
+        return ApiResponseVO.success(service.getProjectConversations(projectId,UserContext.requireCurrentUser().getId(),page,size,keyword));
+    }
+    @GetMapping("/status") public ApiResponseVO<List<ConversationVO>> status(@PathVariable Long projectId,
+            @RequestParam(required=false) List<Long> ids) {
+        return ApiResponseVO.success(service.getConversationStatuses(projectId,UserContext.requireCurrentUser().getId(),ids));
     }
     @GetMapping("/{id}") public ApiResponseVO<ConversationVO> get(@PathVariable Long projectId,@PathVariable Long id) {
         return ApiResponseVO.success(service.getConversation(projectId,id,UserContext.requireCurrentUser().getId()));

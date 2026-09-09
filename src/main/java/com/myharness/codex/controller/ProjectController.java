@@ -3,11 +3,11 @@ package com.myharness.codex.controller;
 import com.myharness.codex.entity.dto.CreateProjectDTO;
 import com.myharness.codex.entity.vo.ApiResponseVO;
 import com.myharness.codex.entity.vo.ProjectVO;
+import com.myharness.codex.entity.vo.PageVO;
 import com.myharness.codex.security.UserContext;
 import com.myharness.codex.service.ProjectService;
 import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/projects")
@@ -17,7 +17,10 @@ public class ProjectController {
     @PostMapping public ApiResponseVO<ProjectVO> create(@Valid @RequestBody CreateProjectDTO dto){
         return ApiResponseVO.success(service.createProject(dto,UserContext.requireCurrentUser().getId()));
     }
-    @GetMapping public ApiResponseVO<List<ProjectVO>> list(){return ApiResponseVO.success(service.getProjects(UserContext.requireCurrentUser().getId()));}
+    @GetMapping public ApiResponseVO<PageVO<ProjectVO>> list(@RequestParam(defaultValue="1") int page,
+            @RequestParam(defaultValue="20") int size,@RequestParam(required=false) String keyword){
+        return ApiResponseVO.success(service.getProjects(UserContext.requireCurrentUser().getId(),page,size,keyword));
+    }
     @PostMapping("/{id}/retry-preparation") public ApiResponseVO<ProjectVO> retry(@PathVariable Long id){
         return ApiResponseVO.success(service.retryPreparation(id,UserContext.requireCurrentUser().getId()));
     }
