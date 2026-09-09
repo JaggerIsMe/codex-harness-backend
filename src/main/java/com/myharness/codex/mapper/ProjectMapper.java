@@ -21,6 +21,8 @@ public interface ProjectMapper {
     List<ProjectPO> selectForDevice(Long deviceId);
     String PROJECT_SELECT = "SELECT p.id,p.user_id,p.device_id,p.workspace_id,p.project_name,p.status,p.isolation_mode,p.created_at,p.request_key,w.failure_code,w.failure_message," +
             "d.device_code,d.device_name,d.status device_status,w.workspace_name,w.root_path,w.status workspace_status," +
+            "COALESCE((SELECT MAX(activity.last_activity_at) FROM conversation activity " +
+            "WHERE activity.project_id=p.id AND activity.user_id=p.user_id),p.created_at) last_activity_at," +
             "(SELECT COUNT(*) FROM conversation c WHERE c.project_id=p.id) conversation_count " +
             PROJECT_FROM;
 
@@ -32,7 +34,7 @@ public interface ProjectMapper {
     @Select(PROJECT_SELECT + "WHERE p.id=#{id} AND p.user_id=#{userId}")
     ProjectPO selectOwned(@Param("id") Long id,@Param("userId") Long userId);
 
-    @Select(PROJECT_SELECT + OWNED_PROJECT_FILTER + "ORDER BY p.updated_at DESC,p.id DESC LIMIT #{limit} OFFSET #{offset}")
+    @Select(PROJECT_SELECT + OWNED_PROJECT_FILTER + "ORDER BY last_activity_at DESC,p.id DESC LIMIT #{limit} OFFSET #{offset}")
     List<ProjectPO> selectOwnedProjects(@Param("userId") Long userId,@Param("keyword") String keyword,
             @Param("limit") int limit,@Param("offset") long offset);
 

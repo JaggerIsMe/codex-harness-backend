@@ -54,6 +54,17 @@ class WorkspacePaginationMysqlTest {
             )
             """.replace("__PROJECT_IDS__",numbers(125)).replace("__CONVERSATION_IDS__",numbers(205));
 
+    private static final String ACTIVE_PROJECT_FIXTURES=FIXTURES
+            .replace("'2026-09-09 12:00:00' created_at",
+                    "IF(id=122,'2026-09-10 15:00:00','2026-09-09 12:00:00') created_at")
+            .replace("'2026-09-09 12:00:00' updated_at",
+                    "IF(id=123,'2026-09-12 20:00:00','2026-09-09 12:00:00') updated_at")
+            .replace("'2026-09-09 12:00:00' last_activity_at", """
+                    CASE WHEN id=1 THEN '2026-09-10 14:00:00' WHEN id=203 THEN '2026-09-10 13:00:00'
+                         WHEN id=204 THEN '2026-09-10 10:00:00' WHEN id=205 THEN '2026-09-11 20:00:00'
+                         ELSE '2026-09-09 12:00:00' END last_activity_at
+                    """);
+
     private final Configuration configuration=configuration();
 
     private static String numbers(int count) {
@@ -68,6 +79,40 @@ class WorkspacePaginationMysqlTest {
             var page=ids(connection,"ProjectMapper.selectOwnedProjects",args);
             assertThat(page).hasSize(20).startsWith(103L).endsWith(84L);
             assertThat(ids(connection,"ProjectMapper.selectOwnedProjects",arguments("",20,120))).containsExactly(3L,2L,1L);
+        });
+    }
+
+    @Test
+    void recentConversationActivityMovesAnOlderProjectToTheFirstPageWithoutBreakingPageBoundaries() {
+        withConnection(connection -> {
+            assertThat(ids(connection,"ProjectMapper.selectOwnedProjects",arguments("",20,0))).doesNotContain(9L,10L);
+            var first=ids(connection,ACTIVE_PROJECT_FIXTURES,"ProjectMapper.selectOwnedProjects",arguments("",20,0));
+            var second=ids(connection,ACTIVE_PROJECT_FIXTURES,"ProjectMapper.selectOwnedProjects",arguments("",20,20));
+            assertThat(first).hasSize(20).startsWith(122L,9L,10L,123L).endsWith(106L);
+            assertThat(second).hasSize(20).startsWith(105L).endsWith(86L);
+            assertThat(first).doesNotContainAnyElementsOf(second).doesNotContain(124L,125L);
+            assertThat(count(connection,"ProjectMapper.countOwnedProjects",arguments("",20,0))).isEqualTo(123);
+            assertThat(ids(connection,ACTIVE_PROJECT_FIXTURES,"ProjectMapper.selectOwnedProjects",arguments("",20,120)))
+                    .containsExactly(3L,2L,1L);
+        });
+    }
+
+    @Test
+    void projectActivityUsesTheLatestOwnedConversationAndEmptyProjectsFallBackToCreationTime() {
+        withConnection(connection -> {
+            for(var expected:Map.of(9L,"2026-09-10 14:00:00",10L,"2026-09-10 10:00:00",
+                    122L,"2026-09-10 15:00:00",123L,"2026-09-09 12:00:00").entrySet()) {
+                var args=arguments("",20,0);args.put("id",expected.getKey());
+                query(connection,ACTIVE_PROJECT_FIXTURES,"ProjectMapper.selectOwned",args,rows -> {
+                    assertThat(rows.next()).isTrue();
+                    assertThat(rows.getString("last_activity_at")).isEqualTo(expected.getValue());
+                    assertThat(rows.next()).isFalse();return null;
+                });
+            }
+            var args=arguments("",20,0);args.put("id",125L);
+            assertThat(ids(connection,ACTIVE_PROJECT_FIXTURES,"ProjectMapper.selectOwned",args)).isEmpty();
+            assertThat(ids(connection,ACTIVE_PROJECT_FIXTURES,"ProjectMapper.selectOwnedProjects",arguments("older-needle",20,0)))
+                    .containsExactly(9L);
         });
     }
 
@@ -150,7 +195,11 @@ class WorkspacePaginationMysqlTest {
     }
 
     private List<Long> ids(Connection connection,String method,Map<String,Object> args) throws Exception {
-        return query(connection,method,args,rows -> {
+        return ids(connection,FIXTURES,method,args);
+    }
+
+    private List<Long> ids(Connection connection,String fixtures,String method,Map<String,Object> args) throws Exception {
+        return query(connection,fixtures,method,args,rows -> {
             var ids=new ArrayList<Long>();while(rows.next()) ids.add(rows.getLong("id"));return ids;
         });
     }
@@ -160,9 +209,13 @@ class WorkspacePaginationMysqlTest {
     }
 
     private <T> T query(Connection connection,String method,Map<String,Object> args,RowRead<T> read) throws Exception {
+        return query(connection,FIXTURES,method,args,read);
+    }
+
+    private <T> T query(Connection connection,String fixtures,String method,Map<String,Object> args,RowRead<T> read) throws Exception {
         var mapped=configuration.getMappedStatement("com.myharness.codex.mapper."+method);
         var bound=mapped.getBoundSql(args);
-        try(var statement=connection.prepareStatement(FIXTURES+bound.getSql())) {
+        try(var statement=connection.prepareStatement(fixtures+bound.getSql())) {
             new DefaultParameterHandler(mapped,args,bound).setParameters(statement);
             try(var rows=statement.executeQuery()) {return read.run(rows);}
         }

@@ -56,6 +56,7 @@ class WorkspacePaginationServiceTest {
     @Test
     void returnsRequestedProjectPageAndCountUsingTheSameOwnerAndNormalizedKeyword() {
         var project=new ProjectPO();project.setId(3L);project.setProjectName("季度报告");
+        project.setLastActivityAt(java.time.LocalDateTime.of(2026,9,10,15,0));
         when(projects.countOwnedProjects(7L,"季度")).thenReturn(43L);
         when(projects.selectOwnedProjects(7L,"季度",20,40L)).thenReturn(List.of(project));
 
@@ -65,6 +66,7 @@ class WorkspacePaginationServiceTest {
         assertThat(page.total()).isEqualTo(43);
         assertThat(page.page()).isEqualTo(3);
         assertThat(page.size()).isEqualTo(20);
+        assertThat(page.items().getFirst().getLastActivityAt()).isEqualTo(project.getLastActivityAt());
         var order=inOrder(access,projects);
         order.verify(access).requirePermission(7L,"project:read");
         order.verify(projects).countOwnedProjects(7L,"季度");
@@ -74,6 +76,7 @@ class WorkspacePaginationServiceTest {
     @Test
     void returnsLaterConversationPagesWithStatusProjectionWithoutReadingEveryConversation() {
         var conversation=conversation(1L);conversation.setLatestTurnId(90L);conversation.setLatestTurnStatus("RUNNING");
+        conversation.setLastActivityAt(java.time.LocalDateTime.of(2026,9,10,15,0));
         when(conversations.countProjectConversations(9L,7L,"old")).thenReturn(203L);
         when(conversations.selectProjectConversations(9L,7L,"old",20,200L)).thenReturn(List.of(conversation));
 
@@ -82,6 +85,7 @@ class WorkspacePaginationServiceTest {
         assertThat(page.total()).isEqualTo(203);
         assertThat(page.items()).hasSize(1);
         assertThat(page.items().getFirst().getLatestTurnStatus()).isEqualTo("RUNNING");
+        assertThat(page.items().getFirst().getLastActivityAt()).isEqualTo(conversation.getLastActivityAt());
         verify(access).requirePermission(7L,"conversation:read");
         verify(access).requireDevice(7L,10L);
         verify(conversations,never()).selectLatestTurn(any());
@@ -118,6 +122,7 @@ class WorkspacePaginationServiceTest {
     @Test
     void statusRefreshOnlyQueriesTheRequestedIdsAndRetainsLatestTurnFields() {
         var first=conversation(101L);first.setLatestTurnId(900L);first.setLatestTurnStatus("FAILED");first.setLatestTurnFailureMessage("Disconnected");
+        first.setLastActivityAt(java.time.LocalDateTime.of(2026,9,10,16,0));
         var second=conversation(2L);second.setLatestTurnHasIncompleteMessage(true);
         var ids=List.of(101L,2L);
         when(conversations.selectConversationStatuses(9L,7L,ids)).thenReturn(List.of(first,second));
@@ -126,6 +131,7 @@ class WorkspacePaginationServiceTest {
 
         assertThat(result).extracting(value -> value.getId()).containsExactly(101L,2L);
         assertThat(result.getFirst().getLatestTurnFailureMessage()).isEqualTo("Disconnected");
+        assertThat(result.getFirst().getLastActivityAt()).isEqualTo(first.getLastActivityAt());
         assertThat(result.get(1).getLatestTurnHasIncompleteMessage()).isTrue();
         verify(conversations).selectConversationStatuses(9L,7L,ids);
         verifyNoMoreInteractions(conversations);

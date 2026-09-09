@@ -155,6 +155,7 @@ public class ConversationServiceImpl implements ConversationService {
                 long sequence=conversationMapper.nextSequence(conversationId);
                 conversationMapper.insertMessage(conversationId,value.getId(),sequence,"USER","TEXT",dto.getMessage()==null ? "" : dto.getMessage());
                 attachments.bind(locked,value.getId(),dto.getAttachmentIds());
+                conversationMapper.touchActivity(conversationId,projectId,operatorId,LocalDateTime.now());
                 created.set(true);
                 return value;
             });

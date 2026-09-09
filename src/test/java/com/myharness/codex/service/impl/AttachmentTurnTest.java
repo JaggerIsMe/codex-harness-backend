@@ -17,11 +17,16 @@ class AttachmentTurnTest {
     ConversationMapper mapper; AgentCommandGateway gateway; ConversationAttachmentService attachments;
     ConversationServiceImpl service; ConversationPO conversation; AgentDevicePO device;
     Map<String,ConversationTurnPO> requests;
+    boolean transactionActive;
     @BeforeEach void setup() {
         mapper=mock(ConversationMapper.class);var devices=mock(AgentDeviceMapper.class);var projects=mock(ProjectMapper.class);
         gateway=mock(AgentCommandGateway.class);attachments=mock(ConversationAttachmentService.class);
         var tx=mock(TransactionTemplate.class);
-        when(tx.execute(any())).thenAnswer(i -> ((TransactionCallback<?>)i.getArgument(0)).doInTransaction(mock(org.springframework.transaction.TransactionStatus.class)));
+        when(tx.execute(any())).thenAnswer(i -> {
+            transactionActive=true;
+            try {return ((TransactionCallback<?>)i.getArgument(0)).doInTransaction(mock(org.springframework.transaction.TransactionStatus.class));}
+            finally {transactionActive=false;}
+        });
         var experts=mock(com.myharness.codex.service.ExpertService.class);
         when(experts.freeze(any(),any())).thenReturn(new com.myharness.codex.entity.dto.ExpertRuntimeDTO());
         service=new ConversationServiceImpl(mapper,devices,gateway,tx,mock(ApprovalMapper.class),new ObjectMapper(),projects,
@@ -38,11 +43,27 @@ class AttachmentTurnTest {
         when(mapper.selectTurn(7L)).thenAnswer(i -> requests.values().iterator().next());
     }
     @Test void attachmentOnlyRequestIsBoundAndNetworkRetryDoesNotDispatchTwice() {
+        when(mapper.touchActivity(eq(3L),eq(2L),eq(1L),any())).thenAnswer(i -> {
+            assertTrue(transactionActive,"Preparing a new Turn must touch activity before its transaction completes");
+            assertNotNull(i.getArgument(3));return 1;
+        });
         var input=input();var first=service.startTurn(2L,3L,input,1L);var second=service.startTurn(2L,3L,input,1L);
         assertEquals(first.getId(),second.getId());assertEquals("DOWNLOADING",first.getPreparationPhase());
         verify(attachments).bind(conversation,7L,List.of(9L));verify(mapper).insertMessage(eq(3L),eq(7L),anyLong(),eq("USER"),eq("TEXT"),eq(""));
         verify(gateway,times(1)).send(eq("device"),any());
         input.setMessage("different");assertThrows(com.myharness.codex.exception.BusinessException.class,() -> service.startTurn(2L,3L,input,1L));
+        verify(mapper,times(1)).touchActivity(eq(3L),eq(2L),eq(1L),any());
+        var order=inOrder(mapper,attachments,gateway);
+        order.verify(attachments).bind(conversation,7L,List.of(9L));
+        order.verify(mapper).touchActivity(eq(3L),eq(2L),eq(1L),any());
+        order.verify(gateway).send(eq("device"),any());
+    }
+    @Test void failedAttachmentBindingDoesNotUpdateConversationActivity() {
+        doThrow(new com.myharness.codex.exception.BusinessException(com.myharness.codex.entity.enums.ErrorCode.INVALID_REQUEST))
+                .when(attachments).bind(any(),anyLong(),anyList());
+        assertThrows(com.myharness.codex.exception.BusinessException.class,() -> service.startTurn(2L,3L,input(),1L));
+        verify(mapper,never()).touchActivity(any(),any(),any(),any());
+        verify(gateway,never()).send(any(),any());
     }
     @Test void oldAgentCannotSilentlyDropAttachments() {
         device.setConversationAttachments(false);

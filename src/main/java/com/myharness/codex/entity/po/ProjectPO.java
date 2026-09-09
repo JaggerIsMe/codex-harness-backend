@@ -24,6 +24,7 @@ public class ProjectPO {
     private String workspaceStatus;
     private Integer conversationCount;
     private LocalDateTime createdAt;
+    private LocalDateTime lastActivityAt;
 
     public Long getId(){return id;} public void setId(Long value){id=value;}
     public Long getUserId(){return userId;} public void setUserId(Long value){userId=value;}
@@ -40,4 +41,5 @@ public class ProjectPO {
     public String getWorkspaceStatus(){return workspaceStatus;} public void setWorkspaceStatus(String value){workspaceStatus=value;}
     public Integer getConversationCount(){return conversationCount;} public void setConversationCount(Integer value){conversationCount=value;}
     public LocalDateTime getCreatedAt(){return createdAt;} public void setCreatedAt(LocalDateTime value){createdAt=value;}
+    public LocalDateTime getLastActivityAt(){return lastActivityAt;} public void setLastActivityAt(LocalDateTime value){lastActivityAt=value;}
 }

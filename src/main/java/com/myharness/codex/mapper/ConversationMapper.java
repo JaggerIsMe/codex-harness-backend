@@ -122,6 +122,10 @@ public interface ConversationMapper {
     @Options(useGeneratedKeys=true,keyProperty="id")
     int insertTurn(ConversationTurnPO turn);
 
+    @Update("UPDATE conversation SET last_activity_at=#{now} WHERE id=#{id} AND project_id=#{projectId} AND user_id=#{userId}")
+    int touchActivity(@Param("id") Long id,@Param("projectId") Long projectId,@Param("userId") Long userId,
+            @Param("now") LocalDateTime now);
+
     @Select("SELECT id,conversation_id,codex_turn_id,status,client_request_id,request_hash,preparation_phase,expert_version_id,expert_name,expert_runtime,model_configuration_version_id,model_name,model_runtime FROM conversation_turn WHERE id=#{id}")
     ConversationTurnPO selectTurn(@Param("id") Long id);
 

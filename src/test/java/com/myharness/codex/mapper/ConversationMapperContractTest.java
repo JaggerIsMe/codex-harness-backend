@@ -10,6 +10,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ConversationMapperContractTest {
     @Test
+    void touchingActivityRetainsConversationProjectAndOwnerScope() throws Exception {
+        var method=ConversationMapper.class.getMethod("touchActivity",Long.class,Long.class,Long.class,LocalDateTime.class);
+        var sql=String.join(" ",method.getAnnotation(Update.class).value());
+        assertThat(sql).contains("SET last_activity_at=#{now}","WHERE id=#{id} AND project_id=#{projectId} AND user_id=#{userId}");
+    }
+
+    @Test
     void expertThreadReplacementAcceptsTheCurrentRuntimeSchema() throws Exception {
         var method=ConversationMapper.class.getMethod("replaceExpertThread",Long.class,Long.class,Long.class,
                 String.class,String.class,String.class,LocalDateTime.class);

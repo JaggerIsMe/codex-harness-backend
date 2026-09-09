@@ -148,6 +148,11 @@ class ConversationServiceImplTest {
 
         service.startTurn(5L, 2L, request, 3L);
 
+        var order=org.mockito.Mockito.inOrder(conversationMapper,gateway);
+        order.verify(conversationMapper).touchActivity(org.mockito.ArgumentMatchers.eq(2L),org.mockito.ArgumentMatchers.eq(5L),
+                org.mockito.ArgumentMatchers.eq(3L),org.mockito.ArgumentMatchers.any());
+        order.verify(gateway).send(org.mockito.ArgumentMatchers.eq("device-1"),org.mockito.ArgumentMatchers.any());
+
         var sent = org.mockito.ArgumentCaptor.forClass(com.myharness.codex.gateway.AgentCommand.class);
         org.mockito.Mockito.verify(gateway).send(org.mockito.ArgumentMatchers.eq("device-1"), sent.capture());
         var payload = new ObjectMapper().valueToTree(sent.getValue().getPayload());

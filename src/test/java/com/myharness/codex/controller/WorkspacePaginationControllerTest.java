@@ -76,6 +76,19 @@ class WorkspacePaginationControllerTest {
     }
 
     @Test
+    void projectDetailsAndConversationStatusExposeTheirActivityTimestamps() throws Exception {
+        var activity=java.time.LocalDateTime.of(2026,9,10,16,30);
+        var project=projects.selectOwned(9L,7L);project.setLastActivityAt(activity);
+        var conversation=new ConversationPO();conversation.setId(101L);conversation.setLastActivityAt(activity);
+        when(conversations.selectConversationStatuses(9L,7L,List.of(101L))).thenReturn(List.of(conversation));
+
+        mvc.perform(get("/api/v1/projects/9")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.lastActivityAt").exists());
+        mvc.perform(get("/api/v1/projects/9/conversations/status").param("ids","101")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].lastActivityAt").exists());
+    }
+
+    @Test
     void acceptsExplicitPageSizeAndKeywordForBothLists() throws Exception {
         for(String path:List.of("/api/v1/projects","/api/v1/projects/9/conversations"))
             mvc.perform(get(path).param("page","4").param("size","50").param("keyword"," old "))
