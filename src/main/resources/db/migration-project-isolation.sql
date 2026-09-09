@@ -1,7 +1,7 @@
 -- One-time migration for installations created before project isolation.
 -- Backfills one project per existing user/workspace pair, then makes project_id mandatory.
 
-USE `newharness`;
+USE `harness`;
 
 ALTER TABLE agent_device ADD COLUMN isolation_mode VARCHAR(32) NOT NULL DEFAULT 'UNKNOWN' AFTER os_version;
 

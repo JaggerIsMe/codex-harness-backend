@@ -1,7 +1,7 @@
 package com.myharness.codex.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.myharness.codex.config.AttachmentProperties;
+import com.myharness.codex.config.WorkspaceFileProperties;
 import com.myharness.codex.entity.dto.*;
 import com.myharness.codex.entity.enums.ErrorCode;
 import com.myharness.codex.entity.po.*;
@@ -34,7 +34,7 @@ public class WorkspaceFileService {
     private final AuthorizationService access;
     private final DeviceAuthenticationService authentication;
     private final AgentCommandGateway gateway;
-    private final AttachmentProperties properties;
+    private final WorkspaceFileProperties properties;
     private final StringRedisTemplate redis;
     private final ObjectMapper json;
     private final ClientEventWebSocketHandler events;
@@ -42,7 +42,7 @@ public class WorkspaceFileService {
 
     public WorkspaceFileService(ProjectMapper projects, AgentDeviceMapper devices, WorkspaceFileOperationMapper operations,
             AuthorizationService access, DeviceAuthenticationService authentication, AgentCommandGateway gateway,
-            AttachmentProperties properties, StringRedisTemplate redis, ObjectMapper json, ClientEventWebSocketHandler events) {
+            WorkspaceFileProperties properties, StringRedisTemplate redis, ObjectMapper json, ClientEventWebSocketHandler events) {
         this.projects=projects; this.devices=devices; this.operations=operations; this.access=access;
         this.authentication=authentication; this.gateway=gateway; this.properties=properties;
         this.redis=redis; this.json=json; this.events=events;
@@ -98,21 +98,31 @@ public class WorkspaceFileService {
     }
 
     public void requireUploaded(ConversationAttachmentPO p) {
-        if(p.getWorkspaceOperationId()==null) return; // Legacy immutable attachments.
+        if(p.getWorkspaceOperationId()==null || p.getWorkspacePath()==null || p.getWorkspacePath().isBlank())
+            throw new BusinessException(ErrorCode.CONFLICT,"附件缺少工作区文件关联，请重新上传");
         var op=requireOperation(p.getProjectId(),p.getWorkspaceOperationId());
         if(!"SUCCEEDED".equals(op.getStatus()) || !Objects.equals(op.getAttachmentId(),p.getId()))
             throw new BusinessException(ErrorCode.CONFLICT,"附件尚未写入工作区，请等待上传完成或重新上传");
     }
 
-    public AttachmentFileVO downloadContent(Long pid,Long uid,Long id) throws IOException {
+    public WorkspaceFileContentVO downloadContent(Long pid,Long uid,Long id) throws IOException {
         owned(pid,uid,false); var op=requireOperation(pid,id);
         if(!"PREPARE_WORKSPACE_DOWNLOAD".equals(op.getKind()) || !"SUCCEEDED".equals(op.getStatus())) throw invalid("下载尚未就绪或已过期");
         return contentFile(op);
     }
 
+    public WorkspaceFileSnapshotDTO previewSnapshot(Long pid,Long uid,Long id) throws IOException {
+        owned(pid,uid,false);
+        var op=requireOperation(pid,id);
+        if(!"PREPARE_WORKSPACE_DOWNLOAD".equals(op.getKind()) || !"SUCCEEDED".equals(op.getStatus())) throw invalid("预览尚未就绪或已过期");
+        validatePath(op.getPath());
+        if(!visiblePath(op.getPath())) throw invalid("内部文件不支持预览");
+        return new WorkspaceFileSnapshotDTO(id.toString(),op.getPath(),op.getSha256(),op.getUpdatedAt(),contentFile(op));
+    }
+
     public WorkspaceFileCommandDTO agentManifest(Long id,String code,String auth) {return command(agentOperation(id,code,auth));}
 
-    public AttachmentFileVO agentContent(Long id,String code,String auth) throws IOException {
+    public WorkspaceFileContentVO agentContent(Long id,String code,String auth) throws IOException {
         var op=agentOperation(id,code,auth);
         if(!"UPLOAD_WORKSPACE_FILE".equals(op.getKind())) throw invalid("操作不允许下载上传内容");
         return contentFile(op);
@@ -212,10 +222,11 @@ public class WorkspaceFileService {
     @Scheduled(fixedDelay=3600000)
     public void cleanup() {
         for(var op:operations.expired(LocalDateTime.now().minusHours(24))) {
-            if(op.getAttachmentId()!=null) continue;
             try {
                 if(op.getStorageKey()!=null) Files.deleteIfExists(storage(op.getStorageKey()));
-                operations.expire(op.getId());
+                operations.releaseContent(op.getId());
+                // Message association keeps the successful upload receipt, not a permanent byte snapshot.
+                if(op.getAttachmentId()==null) operations.expire(op.getId());
             } catch(Exception e) {log("工作区传输清理失败",e);}
         }
     }
@@ -325,10 +336,10 @@ public class WorkspaceFileService {
         if(key==null || !key.matches("[a-f0-9-]{36}")) throw missing();
         Path root=Path.of(properties.getStorageDir()).toAbsolutePath().normalize();Files.createDirectories(root);return root.toRealPath().resolve(key);
     }
-    private AttachmentFileVO contentFile(WorkspaceFileOperationPO op) throws IOException {
+    private WorkspaceFileContentVO contentFile(WorkspaceFileOperationPO op) throws IOException {
         Path path=storage(op.getStorageKey());
         if(!Files.isRegularFile(path,LinkOption.NOFOLLOW_LINKS) || Files.size(path)!=op.getSizeBytes()) throw missing();
-        return new AttachmentFileVO(new FileSystemResource(path),op.getPath().substring(op.getPath().lastIndexOf('/')+1),op.getSizeBytes());
+        return new WorkspaceFileContentVO(new FileSystemResource(path),op.getPath().substring(op.getPath().lastIndexOf('/')+1),op.getSizeBytes());
     }
     private record Content(long size,String sha) {}
     private Content store(InputStream input,Path target,long limit) throws IOException {

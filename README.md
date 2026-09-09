@@ -10,9 +10,10 @@ My Harness For Codex 的中台后端。已提供登录鉴权、设备注册、�
 
 Redis 使用 `spring.data.redis.*` 配置；外部配置中的旧 `spring.redis.*` 需同步迁移，环境变量对应 `SPRING_DATA_REDIS_HOST`、`SPRING_DATA_REDIS_PORT`、`SPRING_DATA_REDIS_PASSWORD`。本次升级不修改数据库结构、业务协议或启用虚拟线程。
 
-1. 使用 `src/main/resources/db/schema.sql` 初始化 `newharness` 数据库（可交付副本：`../../docs/newharness.sql`）。全新数据库只执行完整初始化脚本，无需再执行历史迁移脚本。脚本不复制旧 `harness` 库的数据或管理员账号。
+1. 使用 `src/main/resources/db/schema.sql` 初始化 `harness` 数据库（可交付副本：`../../docs/harness.sql`）。全新数据库只执行完整初始化脚本，无需再执行历史迁移脚本。初始化脚本不负责迁移已有数据库的数据或管理员账号。
    已使用旧版 `schema.sql` 初始化过的数据库，先按需执行 `migration-agent-v1.sql`、`migration-dynamic-workspace.sql`、`migration-project-isolation.sql`，再按 [用户与机器授权上线说明](../../docs/user-device-rbac.md) 显式选择管理员，执行一次 `migration-user-device-rbac.sql`。
    已有多个 Skill Version 的数据库在部署本版本前，还需执行一次 `migration-skill-single-active-version.sql`，将每个 Skill 的最新版本设为 ACTIVE，并停用旧版本。
+   若表结构完整但角色/权限被清空，单独执行 [seed-rbac.sql](src/main/resources/db/seed-rbac.sql) 恢复 2 个角色、16 项权限和 26 条角色权限关联，不要重跑历史结构迁移。已有管理员缺角色时，在脚本中显式填写 `@harness_rbac_admin_user_id`；默认 NULL 不为任何已有用户提权。
 2. 在 PowerShell 中设置本地配置：
 
 ```powershell
@@ -35,9 +36,9 @@ mvn spring-boot:run
 
 服务默认监听 `http://localhost:9010`。管理员创建成功后，应关闭 `HARNESS_BOOTSTRAP_ADMIN_ENABLED` 并清除环境中的管理员明文密码；已有同名管理员不会被覆盖。
 
-## Conversation Artifact 文件交付
+## Workspace 文件与消息附件
 
-支持 Agent 交付文件上传、会话文件卡片、历史下载和失败重试。升级前执行 [产物迁移](src/main/resources/db/migration-conversation-artifacts.sql)，并持久化 harness.artifacts.storage-dir。完整协议、接口、限制和验收说明见 [Conversation Artifact 方案](../../docs/conversation-artifacts.md)。产物 Agent 接口使用 Device Token，用户列表、下载与重试使用 JWT。
+上传、下载与 Agent 生成文件统一使用项目工作区。消息附件仅保留关联与校验，平台传输存储配置为 `harness.workspace-files`，默认目录为 `${project.folder}/workspace-file-storage`。旧模块清理与数据库升级见 [Workspace 文件方案](../../docs/workspace-files.md)。
 
 ## 已实现接口
 

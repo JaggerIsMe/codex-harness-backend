@@ -21,6 +21,6 @@ public interface WorkspaceFileOperationMapper {
     @Update("UPDATE workspace_file_operation SET status=#{status},error=#{error},updated_at=CURRENT_TIMESTAMP WHERE id=#{id} AND status IN ('QUEUED','RUNNING')") int finish(@Param("id") Long id,@Param("status") String status,@Param("error") String error);
     @Update("UPDATE workspace_file_operation SET size_bytes=#{size},sha256=#{sha},updated_at=CURRENT_TIMESTAMP WHERE id=#{id} AND status='RUNNING'") int content(@Param("id") Long id,@Param("size") long size,@Param("sha") String sha);
     @Select("SELECT * FROM workspace_file_operation WHERE status IN ('RUNNING','QUEUED') AND updated_at<#{deadline} LIMIT 100") List<WorkspaceFileOperationPO> timedOut(LocalDateTime deadline);
-    @Select("SELECT * FROM workspace_file_operation WHERE attachment_id IS NULL AND updated_at<#{deadline} AND status IN ('SUCCEEDED','FAILED') LIMIT 200") List<WorkspaceFileOperationPO> expired(LocalDateTime deadline);
-    @Delete("DELETE FROM workspace_file_operation WHERE id=#{id} AND status IN ('SUCCEEDED','FAILED') AND attachment_id IS NULL") int delete(Long id);
+    @Select("SELECT * FROM workspace_file_operation WHERE (attachment_id IS NULL OR storage_key IS NOT NULL) AND updated_at<#{deadline} AND status IN ('SUCCEEDED','FAILED') LIMIT 200") List<WorkspaceFileOperationPO> expired(LocalDateTime deadline);
+    @Update("UPDATE workspace_file_operation SET storage_key=NULL WHERE id=#{id} AND status IN ('SUCCEEDED','FAILED')") int releaseContent(Long id);
 }

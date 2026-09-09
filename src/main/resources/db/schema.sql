@@ -2,11 +2,11 @@
 -- Compatible with MySQL 5.7.19 and MySQL 8.x.
 -- Application code must read/write DATETIME values as UTC.
 
-CREATE DATABASE IF NOT EXISTS `newharness`
+CREATE DATABASE IF NOT EXISTS `harness`
     DEFAULT CHARACTER SET utf8mb4
     DEFAULT COLLATE utf8mb4_unicode_ci;
 
-USE `newharness`;
+USE `harness`;
 
 CREATE TABLE IF NOT EXISTS `sys_user` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
@@ -400,25 +400,7 @@ CREATE TABLE IF NOT EXISTS conversation_message_attachment (
  CONSTRAINT fk_ma_attachment FOREIGN KEY(attachment_id) REFERENCES conversation_attachment(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Apply to an existing database before starting the upgraded Server.
-CREATE TABLE IF NOT EXISTS conversation_artifact (
- id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
- user_id BIGINT UNSIGNED NOT NULL, project_id BIGINT UNSIGNED NOT NULL,
- conversation_id BIGINT UNSIGNED NOT NULL, turn_id BIGINT UNSIGNED NOT NULL, device_id BIGINT UNSIGNED NOT NULL,
- artifact_key VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
- file_name VARCHAR(255) NOT NULL, storage_key VARCHAR(64) NOT NULL,
- media_type VARCHAR(128) NOT NULL, size_bytes BIGINT UNSIGNED NOT NULL, sha256 CHAR(64) NOT NULL,
- status VARCHAR(16) NOT NULL DEFAULT 'UPLOADING', error_message VARCHAR(255) NULL,
- created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
- updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
- UNIQUE KEY uk_artifact_turn_key (turn_id,artifact_key),
- UNIQUE KEY uk_artifact_storage (storage_key),
- KEY idx_artifact_conversation (conversation_id,id), KEY idx_artifact_recovery (status,updated_at),
- CONSTRAINT fk_artifact_conversation FOREIGN KEY (conversation_id) REFERENCES conversation(id),
- CONSTRAINT fk_artifact_turn FOREIGN KEY (turn_id) REFERENCES conversation_turn(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- Apply once after the existing RBAC, attachments and artifacts migrations.
+-- Apply once after the existing RBAC and message attachment migrations.
 ALTER TABLE agent_device ADD COLUMN project_experts TINYINT NOT NULL DEFAULT 0,
     ADD COLUMN expert_mcp TINYINT NOT NULL DEFAULT 0;
 ALTER TABLE codex_project ADD COLUMN expert_revision BIGINT NOT NULL DEFAULT 0;

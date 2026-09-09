@@ -9,6 +9,7 @@ import com.myharness.codex.exception.*;
 import com.myharness.codex.gateway.AgentCommandGateway;
 import com.myharness.codex.mapper.*;
 import com.myharness.codex.service.WorkspaceFileService;
+import com.myharness.codex.service.WorkspaceFilePreviewService;
 import com.myharness.codex.websocket.ClientEventWebSocketHandler;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
@@ -39,7 +40,7 @@ class WorkspaceFileHttpSecurityTest {
     @Autowired AgentDeviceMapper devices;
     @Autowired UserAuthenticationService users;
     @Autowired AuthorizationService access;
-    @Autowired AttachmentProperties properties;
+    @Autowired WorkspaceFileProperties properties;
     MockMvc mvc;
     WorkspaceFileOperationPO op;
     static final String AGENT="/api/v1/agent/workspace-file-operations/1";
@@ -83,12 +84,33 @@ class WorkspaceFileHttpSecurityTest {
                 .andExpect(header().string("Cache-Control","no-store")).andExpect(header().string("X-Content-Type-Options","nosniff"));
         mvc.perform(get(USER).servletPath(USER).header("Authorization","Bearer device-token")).andExpect(status().isUnauthorized());
     }
+    @Test void previewRechecksOwnershipStateHiddenPathsAndAssignment() throws Exception {
+        String preview=USER.replace("/content","/preview");
+        op.setKind("PREPARE_WORKSPACE_DOWNLOAD");op.setStatus("SUCCEEDED");
+        mvc.perform(get(preview).servletPath(preview).header("Authorization","Bearer user-token"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.kind").value("TEXT"))
+                .andExpect(jsonPath("$.data.sha256").value(op.getSha256()))
+                .andExpect(jsonPath("$.data.fileName").value("报告.txt"));
+        mvc.perform(get(preview).servletPath(preview)).andExpect(status().isUnauthorized());
+        op.setProjectId(99L);
+        mvc.perform(get(preview).servletPath(preview).header("Authorization","Bearer user-token")).andExpect(status().isNotFound());
+        op.setProjectId(2L);op.setStatus("EXPIRED");
+        mvc.perform(get(preview).servletPath(preview).header("Authorization","Bearer user-token")).andExpect(status().isBadRequest());
+        op.setStatus("SUCCEEDED");
+        for(String path:List.of(".git/config","docs/.CODEX/config",".harness/out.txt",".agent/a",".agents/skill.md")) {
+            op.setPath(path);
+            mvc.perform(get(preview).servletPath(preview).header("Authorization","Bearer user-token")).andExpect(status().isBadRequest());
+        }
+        op.setPath("报告.txt");
+        doThrow(new BusinessException(ErrorCode.FORBIDDEN)).when(access).requireDevice(3L,4L);
+        mvc.perform(get(preview).servletPath(preview).header("Authorization","Bearer user-token")).andExpect(status().isForbidden());
+    }
     @Configuration @EnableWebMvc @EnableWebSecurity
     @Import({UserSecurityConfig.class,AgentWorkspaceFileController.class,WorkspaceFileController.class,
-            WorkspaceFileService.class,DeviceAuthenticationService.class,GlobalExceptionHandler.class})
+            WorkspaceFileService.class,WorkspaceFilePreviewService.class,WorkspacePreviewProperties.class,DeviceAuthenticationService.class,GlobalExceptionHandler.class})
     static class Config {
         @Bean ObjectMapper json(){return new ObjectMapper();}
-        @Bean AttachmentProperties properties(){return new AttachmentProperties();}
+        @Bean WorkspaceFileProperties properties(){return new WorkspaceFileProperties();}
         @Bean WorkspaceFileOperationMapper operations(){return mock(WorkspaceFileOperationMapper.class);}
         @Bean ProjectMapper projects(){return mock(ProjectMapper.class);}
         @Bean AgentDeviceMapper devices(){return mock(AgentDeviceMapper.class);}

@@ -1,7 +1,7 @@
 package com.myharness.codex.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.myharness.codex.config.AttachmentProperties;
+import com.myharness.codex.config.WorkspaceFileProperties;
 import com.myharness.codex.entity.dto.*;
 import com.myharness.codex.entity.po.*;
 import com.myharness.codex.entity.vo.WorkspaceFileEntryVO;
@@ -42,7 +42,7 @@ class WorkspaceFileServiceTest {
         when(hash.get(anyString(),any())).thenAnswer(i -> cache.get(i.getArgument(1)));
         doAnswer(i -> {cache.put(i.getArgument(1),i.getArgument(2));return null;}).when(hash).put(anyString(),any(),any());
         when(hash.keys(anyString())).thenAnswer(i -> new HashSet<>(cache.keySet()));
-        var properties=new AttachmentProperties();properties.setStorageDir(root.toString());
+        var properties=new WorkspaceFileProperties();properties.setStorageDir(root.toString());
         project=new ProjectPO();project.setId(2L);project.setUserId(1L);project.setDeviceId(4L);project.setDeviceCode("device");
         project.setWorkspaceName("demo");project.setWorkspaceStatus("ENABLED");project.setStatus("ACTIVE");
         when(projects.selectOwned(2L,1L)).thenReturn(project);when(projects.selectForDevice(4L)).thenReturn(List.of(project));
@@ -134,5 +134,22 @@ class WorkspaceFileServiceTest {
             assertThrows(BusinessException.class,() -> service.directory(2L,1L,value,"",false));
         var p=new ConversationAttachmentPO();p.setProjectId(2L);p.setId(9L);p.setWorkspaceOperationId(100L);
         assertThrows(BusinessException.class,() -> service.requireUploaded(p));
+    }
+    @Test void legacyAttachmentCannotBypassWorkspaceReadiness() {
+        var attachment=new ConversationAttachmentPO();attachment.setId(9L);attachment.setProjectId(2L);
+        assertThrows(BusinessException.class,() -> service.requireUploaded(attachment));
+        verify(operations,never()).get(any());
+    }
+    @Test void cleanupReleasesMessageTransferBytesButPreservesReadyAssociation() throws Exception {
+        var attachment=new ConversationAttachmentPO();attachment.setId(9L);attachment.setProjectId(2L);
+        attachment.setWorkspacePath("hello.txt");attachment.setWorkspaceOperationId(1L);
+        var op=new WorkspaceFileOperationPO();op.setId(1L);op.setProjectId(2L);op.setAttachmentId(9L);
+        op.setStatus("SUCCEEDED");op.setStorageKey(UUID.randomUUID().toString());rows.put(1L,op);
+        Path content=root.resolve(op.getStorageKey());Files.writeString(content,"hello");
+        when(operations.expired(any())).thenReturn(List.of(op));
+        service.cleanup();
+        assertFalse(Files.exists(content));
+        verify(operations).releaseContent(1L);verify(operations,never()).expire(1L);
+        assertDoesNotThrow(() -> service.requireUploaded(attachment));
     }
 }

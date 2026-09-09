@@ -1,6 +1,6 @@
 package com.myharness.codex.service;
 
-import com.myharness.codex.config.AttachmentProperties;
+import com.myharness.codex.config.WorkspaceFileProperties;
 import com.myharness.codex.entity.enums.ErrorCode;
 import com.myharness.codex.entity.po.*;
 import com.myharness.codex.entity.vo.*;
@@ -8,7 +8,6 @@ import com.myharness.codex.exception.BusinessException;
 import com.myharness.codex.mapper.*;
 import com.myharness.codex.security.AuthorizationService;
 import com.myharness.codex.security.DeviceAuthenticationService;
-import org.springframework.core.io.FileSystemResource;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -23,23 +22,22 @@ import java.util.*;
 /** Owns storage, authorization and attachment/message lifecycle. Call bind inside the Turn transaction. */
 @Service
 public class ConversationAttachmentService {
-    private WorkspaceFileService workspaceFiles;
-    @org.springframework.beans.factory.annotation.Autowired
-    public void setWorkspaceFiles(WorkspaceFileService value) { workspaceFiles=value; }
+    private final WorkspaceFileService workspaceFiles;
     private final ConversationAttachmentMapper mapper;
     private final ConversationMapper conversations;
     private final ProjectMapper projects;
     private final AgentDeviceMapper devices;
     private final AuthorizationService access;
     private final DeviceAuthenticationService authentication;
-    private final AttachmentProperties properties;
+    private final WorkspaceFileProperties properties;
     private final TransactionTemplate transactions;
 
     public ConversationAttachmentService(ConversationAttachmentMapper mapper, ConversationMapper conversations,
             ProjectMapper projects, AgentDeviceMapper devices, AuthorizationService access,
-            DeviceAuthenticationService authentication, AttachmentProperties properties, TransactionTemplate transactions) {
+            DeviceAuthenticationService authentication, WorkspaceFileProperties properties, TransactionTemplate transactions, WorkspaceFileService workspaceFiles) {
         this.mapper=mapper; this.conversations=conversations; this.projects=projects; this.devices=devices;
         this.access=access; this.authentication=authentication; this.properties=properties; this.transactions=transactions;
+        this.workspaceFiles=Objects.requireNonNull(workspaceFiles);
     }
 
     public AttachmentLimitsVO limits(Long pid, Long cid, Long uid) {
@@ -81,11 +79,9 @@ public class ConversationAttachmentService {
                 if(pending.size()>=properties.getMaxFiles() || pending.stream().mapToLong(ConversationAttachmentPO::getSizeBytes).sum()+p.getSizeBytes()>properties.getMaxTotalBytes())
                     throw invalid("待发送附件数量或总大小超过限制，请先移除附件");
                 mapper.insert(p);
-                if(workspaceFiles!=null) {
-                    var operation=workspaceFiles.uploadAttachment(p);
-                    p.setWorkspacePath(p.getFileName());p.setWorkspaceOperationId(Long.valueOf(operation.id()));
-                    mapper.workspace(p.getId(),p.getWorkspacePath(),p.getWorkspaceOperationId());
-                }
+                var operation=workspaceFiles.uploadAttachment(p);
+                p.setWorkspacePath(p.getFileName());p.setWorkspaceOperationId(Long.valueOf(operation.id()));
+                mapper.workspace(p.getId(),p.getWorkspacePath(),p.getWorkspaceOperationId());
                 return null;
             });
             stored=true; return new ConversationAttachmentVO(p);
@@ -108,7 +104,7 @@ public class ConversationAttachmentService {
             if(mapper.markDeleted(aid)!=1) throw invalid("已发送的附件不能移除");
             return value;
         });
-        if(workspaceFiles!=null) workspaceFiles.detachedAttachment(p.getWorkspaceOperationId());
+        workspaceFiles.detachedAttachment(p.getWorkspaceOperationId());
         Files.deleteIfExists(path(p)); mapper.purge(aid);
     }
 
@@ -122,7 +118,7 @@ public class ConversationAttachmentService {
             if(p==null || !c.getId().equals(p.getConversationId()) || !c.getUserId().equals(p.getUserId())
                     || !c.getProjectId().equals(p.getProjectId()) || !List.of("PENDING","ATTACHED").contains(p.getStatus())) throw missing();
             total+=p.getSizeBytes(); if(p.getSizeBytes()>properties.getMaxFileBytes() || total>properties.getMaxTotalBytes()) throw invalid("附件总大小超限");
-            if(workspaceFiles!=null) workspaceFiles.requireUploaded(p);
+            workspaceFiles.requireUploaded(p);
             values.add(p);
         }
         values.sort(Comparator.comparingInt(p -> ids.indexOf(p.getId())));
@@ -142,19 +138,8 @@ public class ConversationAttachmentService {
         for(ConversationMessageVO m:messages) m.setAttachments(grouped.getOrDefault(m.getId(),List.of()));
     }
 
-    public AttachmentFileVO download(Long pid,Long cid,Long aid,Long uid) throws IOException {
-        owned(pid,cid,uid); ConversationAttachmentPO p=mapper.find(cid,aid);
-        if(p==null) throw missing(); return file(p);
-    }
-
     public List<ConversationAttachmentVO> agentManifest(Long tid,String deviceCode,String authorization) {
         requireAgentTurn(tid,deviceCode,authorization); return forTurn(tid);
-    }
-
-    public AttachmentFileVO agentDownload(Long tid,Long aid,String deviceCode,String authorization) throws IOException {
-        requireAgentTurn(tid,deviceCode,authorization);
-        ConversationAttachmentPO p=mapper.forTurn(tid).stream().filter(a -> a.getId().equals(aid)).findFirst().orElseThrow(ConversationAttachmentService::missing);
-        return file(p);
     }
 
     private void requireAgentTurn(Long tid,String code,String auth) {
@@ -174,11 +159,6 @@ public class ConversationAttachmentService {
         access.requireDevice(uid,c.getDeviceId()); return c;
     }
 
-    private AttachmentFileVO file(ConversationAttachmentPO p) throws IOException {
-        Path file=path(p);
-        if(!Files.isRegularFile(file,LinkOption.NOFOLLOW_LINKS) || !file.toRealPath().startsWith(storageRoot()) || Files.size(file)!=p.getSizeBytes()) throw missing();
-        return new AttachmentFileVO(new FileSystemResource(file),p.getFileName(),p.getSizeBytes());
-    }
     private Path storageRoot() throws IOException {Path p=Path.of(properties.getStorageDir()).toAbsolutePath().normalize(); Files.createDirectories(p); return p.toRealPath();}
     private Path path(ConversationAttachmentPO p) throws IOException {
         if(p.getStorageKey()==null || !p.getStorageKey().matches("[a-f0-9-]{36}")) throw missing();
@@ -199,7 +179,7 @@ public class ConversationAttachmentService {
         return "application/octet-stream";
     }
 
-    @Scheduled(fixedDelayString="${harness.attachments.cleanup-ms:3600000}")
+    @Scheduled(fixedDelayString="${harness.workspace-files.cleanup-ms:3600000}")
     public void cleanup() {
         for(ConversationAttachmentPO p:mapper.expired(LocalDateTime.now().minusHours(24))) {
             try {
@@ -208,7 +188,7 @@ public class ConversationAttachmentService {
                     ConversationAttachmentPO current=mapper.lock(p.getId());
                     return current!=null && ("DELETED".equals(current.getStatus()) || mapper.markDeleted(p.getId())==1);
                 }));
-                if(deleted) {if(workspaceFiles!=null) workspaceFiles.detachedAttachment(p.getWorkspaceOperationId());Files.deleteIfExists(path(p)); mapper.purge(p.getId());}
+                if(deleted) {workspaceFiles.detachedAttachment(p.getWorkspaceOperationId());Files.deleteIfExists(path(p)); mapper.purge(p.getId());}
             } catch(Exception e) {org.slf4j.LoggerFactory.getLogger(getClass()).warn("Attachment cleanup will retry {}",p.getId(),e);}
         }
     }

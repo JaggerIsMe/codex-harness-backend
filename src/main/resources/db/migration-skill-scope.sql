@@ -1,7 +1,7 @@
 -- Adds GLOBAL / PROJECT deployment scopes to an existing Harness database.
 -- Run once after deploying the matching server and Agent versions.
 
-USE `newharness`;
+USE `harness`;
 
 ALTER TABLE `device_skill`
     ADD COLUMN `scope_type` VARCHAR(16) NOT NULL DEFAULT 'GLOBAL' COMMENT 'GLOBAL/PROJECT' AFTER `skill_version_id`,

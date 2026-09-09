@@ -1,6 +1,6 @@
 -- Run once after existing migrations, with the application stopped and a database backup.
 -- Replace NULL with the explicitly approved existing administrator's user id.
-USE newharness;
+USE harness;
 SET @rbac_admin_user_id = 1;
 DROP PROCEDURE IF EXISTS assert_rbac_administrator;
 DELIMITER //

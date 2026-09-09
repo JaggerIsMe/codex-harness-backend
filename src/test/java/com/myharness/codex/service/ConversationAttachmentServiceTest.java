@@ -1,6 +1,6 @@
 package com.myharness.codex.service;
 
-import com.myharness.codex.config.AttachmentProperties;
+import com.myharness.codex.config.WorkspaceFileProperties;
 import com.myharness.codex.entity.po.*;
 import com.myharness.codex.exception.BusinessException;
 import com.myharness.codex.mapper.*;
@@ -22,15 +22,18 @@ class ConversationAttachmentServiceTest {
     DeviceAuthenticationService authentication;
     ConversationAttachmentService service;
     ConversationPO conversation;
-    AttachmentProperties properties;
+    WorkspaceFileProperties properties;
+    WorkspaceFileService workspaceFiles;
     @BeforeEach void setup() {
         mapper=mock(ConversationAttachmentMapper.class); conversations=mock(ConversationMapper.class);
         var projects=mock(ProjectMapper.class); var devices=mock(AgentDeviceMapper.class);
         access=mock(AuthorizationService.class); authentication=mock(DeviceAuthenticationService.class);
-        properties=new AttachmentProperties(); properties.setStorageDir(directory.toString());
+        properties=new WorkspaceFileProperties(); properties.setStorageDir(directory.toString());
         var tx=mock(TransactionTemplate.class);
         when(tx.execute(any())).thenAnswer(i -> ((TransactionCallback<?>)i.getArgument(0)).doInTransaction(mock(org.springframework.transaction.TransactionStatus.class)));
-        service=new ConversationAttachmentService(mapper,conversations,projects,devices,access,authentication,properties,tx);
+        workspaceFiles=mock(WorkspaceFileService.class);
+        when(workspaceFiles.uploadAttachment(any())).thenReturn(new com.myharness.codex.entity.vo.WorkspaceFileOperationVO("11","UPLOAD_WORKSPACE_FILE","hello.txt","QUEUED",null));
+        service=new ConversationAttachmentService(mapper,conversations,projects,devices,access,authentication,properties,tx,workspaceFiles);
         conversation=new ConversationPO(); conversation.setId(3L);conversation.setProjectId(2L);conversation.setUserId(1L);conversation.setDeviceId(4L);conversation.setStatus("ACTIVE");
         when(conversations.selectOwnedConversation(2L,3L,1L)).thenReturn(conversation);
         when(conversations.selectConversation(3L)).thenReturn(conversation);
@@ -41,6 +44,9 @@ class ConversationAttachmentServiceTest {
         var result=service.upload(2L,3L,1L,new MockMultipartFile("file","../../hello.txt","text/plain","hello".getBytes()));
         var saved=org.mockito.ArgumentCaptor.forClass(ConversationAttachmentPO.class);verify(mapper).insert(saved.capture());
         assertEquals("hello.txt",result.fileName());
+        assertEquals("hello.txt",result.workspacePath());assertEquals("11",result.workspaceOperationId());
+        verify(workspaceFiles).uploadAttachment(saved.getValue());
+        verify(mapper).workspace(9L,"hello.txt",11L);
         assertEquals(SecureDigests.sha256("hello"),result.sha256());
         assertEquals("hello",Files.readString(directory.resolve(saved.getValue().getStorageKey())));
         try(var files=Files.list(directory)){assertEquals(1,files.count());}
@@ -49,6 +55,18 @@ class ConversationAttachmentServiceTest {
         when(mapper.insert(any())).thenThrow(new IllegalStateException("database unavailable"));
         assertThrows(IllegalStateException.class,() -> service.upload(2L,3L,1L,new MockMultipartFile("file","a.txt","text/plain",new byte[]{1})));
         assertDoesNotThrow(() -> {try(var files=Files.list(directory)){assertEquals(0,files.count());}});
+    }
+    @Test void workspaceUploadFailureDoesNotFallBackToLegacyAttachment() {
+        when(workspaceFiles.uploadAttachment(any())).thenThrow(new BusinessException(com.myharness.codex.entity.enums.ErrorCode.AGENT_OFFLINE));
+        assertThrows(BusinessException.class,() -> service.upload(2L,3L,1L,new MockMultipartFile("file","a.txt","text/plain",new byte[]{1})));
+        assertDoesNotThrow(() -> {try(var files=Files.list(directory)){assertEquals(0,files.count());}});
+        verify(mapper,never()).workspace(any(),any(),any());
+    }
+    @Test void unreadyWorkspaceAttachmentCannotBindToMessage() {
+        var a=attachment();a.setWorkspacePath("a.txt");a.setWorkspaceOperationId(11L);when(mapper.lock(9L)).thenReturn(a);
+        doThrow(new BusinessException(com.myharness.codex.entity.enums.ErrorCode.CONFLICT)).when(workspaceFiles).requireUploaded(a);
+        assertThrows(BusinessException.class,() -> service.bind(conversation,7L,List.of(9L)));
+        verify(mapper,never()).attach(any());verify(mapper,never()).link(any(),any(),anyInt());
     }
     @Test void refusesForeignConversationAndDuplicateAttachments() {
         var a=attachment();a.setConversationId(999L);when(mapper.lock(9L)).thenReturn(a);
@@ -61,11 +79,13 @@ class ConversationAttachmentServiceTest {
         assertThrows(BusinessException.class,() -> service.bind(conversation,7L,List.of(9L)));
         verify(mapper,never()).attach(any());
     }
-    @Test void deviceCannotDownloadAnotherTurnAttachmentOrCanceledTurn() {
+    @Test void deviceCannotReadAnotherDevicesManifestOrCanceledTurn() {
         var device=new AgentDevicePO();device.setId(4L);when(authentication.authenticate("device","Bearer test")).thenReturn(device);
         var turn=new ConversationTurnPO();turn.setConversationId(3L);turn.setStatus("CREATED");when(conversations.selectTurn(7L)).thenReturn(turn);
         when(mapper.forTurn(7L)).thenReturn(List.of(attachment()));
-        assertThrows(BusinessException.class,() -> service.agentDownload(7L,99L,"device","Bearer test"));
+        device.setId(999L);
+        assertThrows(BusinessException.class,() -> service.agentManifest(7L,"device","Bearer test"));
+        device.setId(4L);
         turn.setStatus("INTERRUPTED");
         assertThrows(BusinessException.class,() -> service.agentManifest(7L,"device","Bearer test"));
     }

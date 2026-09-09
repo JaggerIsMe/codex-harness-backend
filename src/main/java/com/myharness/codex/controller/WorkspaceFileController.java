@@ -14,7 +14,8 @@ import java.io.IOException;
 @RequestMapping("/api/v1/projects/{pid}/workspace-files")
 public class WorkspaceFileController {
     private final WorkspaceFileService files;
-    public WorkspaceFileController(WorkspaceFileService files) {this.files=files;}
+    private final com.myharness.codex.service.WorkspaceFilePreviewService previews;
+    public WorkspaceFileController(WorkspaceFileService files,com.myharness.codex.service.WorkspaceFilePreviewService previews) {this.files=files;this.previews=previews;}
     @GetMapping
     public ApiResponseVO<WorkspaceDirectoryVO> directory(@PathVariable Long pid,@RequestParam(defaultValue="") String path,
             @RequestParam(defaultValue="") String cursor,@RequestParam(defaultValue="false") boolean refresh) {
@@ -39,7 +40,11 @@ public class WorkspaceFileController {
     }
     @GetMapping("/operations/{id}/content")
     public ResponseEntity<Resource> content(@PathVariable Long pid,@PathVariable Long id) throws IOException {
-        return ConversationAttachmentController.fileResponse(files.downloadContent(pid,user(),id));
+        return WorkspaceFileResponses.download(files.downloadContent(pid,user(),id));
+    }
+    @GetMapping("/operations/{id}/preview")
+    public ApiResponseVO<WorkspaceFilePreviewVO> preview(@PathVariable Long pid,@PathVariable Long id) throws IOException {
+        return ApiResponseVO.success(previews.preview(pid,user(),id));
     }
     private Long user() {return UserContext.requireCurrentUser().getId();}
 }

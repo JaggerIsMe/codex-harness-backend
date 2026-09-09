@@ -1,4 +1,4 @@
--- Apply once after the existing RBAC, attachments and artifacts migrations.
+-- Apply once after the existing RBAC and message attachment migrations.
 ALTER TABLE agent_device ADD COLUMN project_experts TINYINT NOT NULL DEFAULT 0;
 ALTER TABLE codex_project ADD COLUMN expert_revision BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE conversation ADD COLUMN selected_expert_id BIGINT UNSIGNED NULL,

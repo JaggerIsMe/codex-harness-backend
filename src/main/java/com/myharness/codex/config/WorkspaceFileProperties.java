@@ -3,9 +3,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 @org.springframework.validation.annotation.Validated
 @Component
-@ConfigurationProperties(prefix="harness.attachments")
-public class AttachmentProperties {
-    private String storageDir="./attachment-storage";
+@ConfigurationProperties(prefix="harness.workspace-files")
+public class WorkspaceFileProperties {
+    private String storageDir="./workspace-file-storage";
     @jakarta.validation.constraints.Min(1) private long maxFileBytes=20L*1024*1024;
     @jakarta.validation.constraints.Min(1) @jakarta.validation.constraints.Max(100) private int maxFiles=5;
     @jakarta.validation.constraints.Min(1) private long maxTotalBytes=50L*1024*1024;

@@ -22,7 +22,7 @@ public class AgentWorkspaceFileController {
     @GetMapping("/content")
     public ResponseEntity<Resource> content(@PathVariable Long id,
             @RequestHeader("X-Harness-Device-Code") String code,@RequestHeader(HttpHeaders.AUTHORIZATION) String auth) throws IOException {
-        return ConversationAttachmentController.fileResponse(files.agentContent(id,code,auth));
+        return WorkspaceFileResponses.download(files.agentContent(id,code,auth));
     }
     @PutMapping(value="/content",consumes=MediaType.APPLICATION_OCTET_STREAM_VALUE)
     public ApiResponseVO<Void> receive(@PathVariable Long id,@RequestHeader("X-Harness-Device-Code") String code,

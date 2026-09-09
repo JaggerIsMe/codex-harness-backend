@@ -1,6 +1,6 @@
 -- One-time migration for databases initialized before Harness Agent server integration.
 -- Do not run after applying the current schema.sql to a fresh database.
-USE `newharness`;
+USE `harness`;
 
 ALTER TABLE `agent_device`
     ADD COLUMN `os_name` VARCHAR(128) NULL COMMENT 'Last reported operating system name' AFTER `agent_version`,

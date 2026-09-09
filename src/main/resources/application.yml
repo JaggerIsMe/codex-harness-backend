@@ -15,7 +15,7 @@ spring:
   application:
     name: harness
   datasource:
-    url: jdbc:mysql://localhost:3306/newharness?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC
+    url: jdbc:mysql://localhost:3306/harness?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC
     username: root
     password: root
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -36,13 +36,8 @@ log:
     level: debug
 
 harness:
-  artifacts:
-    storage-dir: ${project.folder}/artifact-storage
-    max-file-bytes: 20971520
-    max-files: 5
-    max-total-bytes: 52428800
-  attachments:
-    storage-dir: ${project.folder}/attachment-storage
+  workspace-files:
+    storage-dir: ${project.folder}/workspace-file-storage
     max-file-bytes: 20971520
     max-files: 5
     max-total-bytes: 52428800

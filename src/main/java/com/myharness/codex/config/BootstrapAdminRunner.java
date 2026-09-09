@@ -41,7 +41,9 @@ public class BootstrapAdminRunner implements ApplicationRunner {
                     "Bootstrap admin requires HARNESS_BOOTSTRAP_ADMIN_USERNAME and HARNESS_BOOTSTRAP_ADMIN_PASSWORD");
         }
         String username = properties.getUsername().trim();
-        rbac.lockAdministratorRole();
+        if (rbac.lockAdministratorRole() == null) {
+            throw new IllegalStateException("RBAC seed is missing; run db/seed-rbac.sql before starting the server");
+        }
         if (sysUserMapper.selectByUsername(username) != null) {
             LOGGER.info("Bootstrap administrator already exists: {}", username);
             return;
@@ -55,7 +57,10 @@ public class BootstrapAdminRunner implements ApplicationRunner {
         user.setStatus(UserStatus.ENABLED.name());
         user.setMustChangePassword(true);
         sysUserMapper.insert(user);
-        rbac.assignRole(user.getId(),"SYS_ADMIN");
+        if (rbac.assignRole(user.getId(), "SYS_ADMIN") != 1) {
+            throw new IllegalStateException(
+                    "Bootstrap SYS_ADMIN role assignment failed; run db/seed-rbac.sql and verify the role is enabled");
+        }
         LOGGER.info("Bootstrap administrator created: {}", username);
     }
 }

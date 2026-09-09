@@ -1,6 +1,6 @@
 -- One-time migration for Web-created dynamic workspaces.
 -- Do not run after applying the current schema.sql to a fresh database.
-USE `newharness`;
+USE `harness`;
 
 ALTER TABLE `agent_workspace`
     MODIFY COLUMN `root_path` VARCHAR(1024) NULL COMMENT 'Canonical absolute path reported by Agent; null while creating',
