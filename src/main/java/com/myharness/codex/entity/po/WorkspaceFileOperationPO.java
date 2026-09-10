@@ -1,6 +1,19 @@
 package com.myharness.codex.entity.po;
 
 public class WorkspaceFileOperationPO {
+    private String targetPath,requestDigest,payloadJson,resultJson,code,contentState,planId,itemsDigest;
+    private Long deletePlanOperationId;
+    private long attachmentCount;
+    public String getTargetPath(){return targetPath;} public void setTargetPath(String v){targetPath=v;}
+    public String getRequestDigest(){return requestDigest;} public void setRequestDigest(String v){requestDigest=v;}
+    public String getPayloadJson(){return payloadJson;} public void setPayloadJson(String v){payloadJson=v;}
+    public String getResultJson(){return resultJson;} public void setResultJson(String v){resultJson=v;}
+    public String getCode(){return code;} public void setCode(String v){code=v;}
+    public String getContentState(){return contentState;} public void setContentState(String v){contentState=v;}
+    public String getPlanId(){return planId;} public void setPlanId(String v){planId=v;}
+    public String getItemsDigest(){return itemsDigest;} public void setItemsDigest(String v){itemsDigest=v;}
+    public Long getDeletePlanOperationId(){return deletePlanOperationId;} public void setDeletePlanOperationId(Long v){deletePlanOperationId=v;}
+    public long getAttachmentCount(){return attachmentCount;} public void setAttachmentCount(long v){attachmentCount=v;}
     private Long id;
     public Long getId() { return id; }
     public void setId(Long value) { id=value; }

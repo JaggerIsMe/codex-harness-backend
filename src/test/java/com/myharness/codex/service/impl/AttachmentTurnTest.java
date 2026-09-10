@@ -32,6 +32,7 @@ class AttachmentTurnTest {
         service=new ConversationServiceImpl(mapper,devices,gateway,tx,mock(ApprovalMapper.class),new ObjectMapper(),projects,
                 mock(ConversationMessageStream.class),mock(AuthorizationService.class),attachments,experts);
         conversation=new ConversationPO();conversation.setId(3L);conversation.setProjectId(2L);conversation.setUserId(1L);
+        conversation.setStatus("ACTIVE");
         conversation.setDeviceId(4L);conversation.setDeviceCode("device");conversation.setWorkspaceName("workspace");conversation.setCodexThreadId("thread");
         when(mapper.selectOwnedConversation(2L,3L,1L)).thenReturn(conversation);when(mapper.lockConversation(3L)).thenReturn(conversation);
         var project=new ProjectPO();project.setStatus("ACTIVE");project.setWorkspaceStatus("ENABLED");project.setRootPath("D:/project");when(projects.selectOwned(2L,1L)).thenReturn(project);
@@ -70,12 +71,38 @@ class AttachmentTurnTest {
         assertThrows(com.myharness.codex.exception.BusinessException.class,() -> service.startTurn(2L,3L,input(),1L));
         verify(mapper,never()).insertTurn(any());verify(gateway,never()).send(any(),any());
     }
+    @Test void projectMutationBlocksNewTurnBeforeMessageOrAttachmentBinding() {
+        var files=mock(com.myharness.codex.service.WorkspaceFileService.class);service.setWorkspaceFiles(files);
+        doAnswer(call -> {
+            assertTrue(transactionActive);
+            throw new com.myharness.codex.exception.BusinessException(com.myharness.codex.entity.enums.ErrorCode.CONFLICT);
+        }).when(files).assertNoMutation(2L);
+        assertThrows(com.myharness.codex.exception.BusinessException.class,() -> service.startTurn(2L,3L,input(),1L));
+        verify(mapper,never()).insertTurn(any());verify(mapper,never()).insertMessage(any(),any(),anyLong(),any(),any(),any());
+        verify(attachments,never()).bind(any(),any(),any());verify(gateway,never()).send(any(),any());
+    }
+    @Test void retryOfExistingTurnDoesNotBecomeNewWorkDuringFileMutation() {
+        var input=input();var original=service.startTurn(2L,3L,input,1L);
+        var files=mock(com.myharness.codex.service.WorkspaceFileService.class);service.setWorkspaceFiles(files);
+        doThrow(new com.myharness.codex.exception.BusinessException(com.myharness.codex.entity.enums.ErrorCode.CONFLICT))
+                .when(files).assertNoMutation(2L);
+        assertEquals(original.getId(),service.startTurn(2L,3L,input,1L).getId());
+        verify(files,never()).assertNoMutation(any());verify(gateway,times(1)).send(any(),any());
+    }
     @Test void cancellationPersistsBeforeInterruptCommand() {
         service.startTurn(2L,3L,input(),1L);clearInvocations(gateway);
         service.interruptTurn(2L,3L,7L,1L);
         var order=inOrder(mapper,gateway);
         order.verify(mapper).finishTurn(eq(7L),eq(3L),eq(4L),eq("INTERRUPTED"),isNull(),anyString(),any());
         order.verify(gateway).send(eq("device"),any());
+    }
+    @Test void deletedConversationCannotStartATurnAfterItsInitialOwnershipCheck() {
+        when(mapper.lockConversation(3L)).thenReturn(null);
+        var failure=assertThrows(com.myharness.codex.exception.BusinessException.class,
+                () -> service.startTurn(2L,3L,input(),1L));
+        assertEquals(com.myharness.codex.entity.enums.ErrorCode.NOT_FOUND,failure.getErrorCode());
+        verify(mapper,never()).insertTurn(any());
+        verify(gateway,never()).send(any(),any());
     }
     private StartTurnDTO input(){var input=new StartTurnDTO();input.setMessage("");input.setAttachmentIds(List.of(9L));input.setClientRequestId("request-1");return input;}
 }

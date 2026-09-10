@@ -68,6 +68,34 @@ class ConversationAttachmentServiceTest {
         assertThrows(BusinessException.class,() -> service.bind(conversation,7L,List.of(9L)));
         verify(mapper,never()).attach(any());verify(mapper,never()).link(any(),any(),anyInt());
     }
+    @Test void deletedOrUncertainWorkspaceAttachmentCannotBindEvenWithSuccessfulUploadReceipt() {
+        var a=attachment();a.setWorkspacePath("a.txt");a.setWorkspaceOperationId(11L);when(mapper.lock(9L)).thenReturn(a);
+        for(String state:List.of("MISSING","UNKNOWN")) {
+            a.setWorkspaceLocationState(state);
+            assertThrows(BusinessException.class,() -> service.bind(conversation,7L,List.of(9L)));
+        }
+        verify(workspaceFiles,never()).requireUploaded(any());verify(mapper,never()).attach(any());
+    }
+    @Test void attachmentDownloadResolvesCurrentLocationUnderProjectLock() {
+        var a=attachment();a.setWorkspacePath("archive/renamed.txt");a.setWorkspaceOperationId(11L);
+        when(mapper.find(3L,9L)).thenReturn(a);
+        String key=UUID.randomUUID().toString();
+        service.download(2L,3L,9L,1L,key);
+        var order=inOrder(mapper,workspaceFiles);
+        order.verify(mapper).lockProject(2L);order.verify(workspaceFiles).assertNoMutation(2L);
+        order.verify(mapper).find(3L,9L);order.verify(workspaceFiles).requireUploaded(a);
+        order.verify(workspaceFiles).download(2L,1L,new com.myharness.codex.entity.dto.WorkspaceFileRequestDTO("archive/renamed.txt",key));
+    }
+    @Test void deletedAttachmentCannotDownloadLaterFileAtTheSamePath() {
+        var a=attachment();a.setWorkspacePath("a.txt");a.setWorkspaceLocationState("MISSING");when(mapper.find(3L,9L)).thenReturn(a);
+        assertThrows(BusinessException.class,() -> service.download(2L,3L,9L,1L,UUID.randomUUID().toString()));
+        verify(workspaceFiles,never()).download(any(),any(),any());
+    }
+    @Test void outstandingMutationBlocksAttachmentDownloadBeforeResolvingPath() {
+        doThrow(new BusinessException(com.myharness.codex.entity.enums.ErrorCode.CONFLICT)).when(workspaceFiles).assertNoMutation(2L);
+        assertThrows(BusinessException.class,() -> service.download(2L,3L,9L,1L,UUID.randomUUID().toString()));
+        verify(mapper,never()).find(any(),any());verify(workspaceFiles,never()).download(any(),any(),any());
+    }
     @Test void refusesForeignConversationAndDuplicateAttachments() {
         var a=attachment();a.setConversationId(999L);when(mapper.lock(9L)).thenReturn(a);
         assertThrows(BusinessException.class,() -> service.bind(conversation,7L,List.of(9L)));

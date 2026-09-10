@@ -13,7 +13,8 @@ Redis 使用 `spring.data.redis.*` 配置；外部配置中的旧 `spring.redis.
 1. 使用 `src/main/resources/db/schema.sql` 初始化 `harness` 数据库（可交付副本：`../../docs/harness.sql`）。全新数据库只执行完整初始化脚本，无需再执行历史迁移脚本。初始化脚本不负责迁移已有数据库的数据或管理员账号。
    已使用旧版 `schema.sql` 初始化过的数据库，先按需执行 `migration-agent-v1.sql`、`migration-dynamic-workspace.sql`、`migration-project-isolation.sql`，再按 [用户与机器授权上线说明](../../docs/user-device-rbac.md) 显式选择管理员，执行一次 `migration-user-device-rbac.sql`。
    已有多个 Skill Version 的数据库在部署本版本前，还需执行一次 `migration-skill-single-active-version.sql`，将每个 Skill 的最新版本设为 ACTIVE，并停用旧版本。
-   若表结构完整但角色/权限被清空，单独执行 [seed-rbac.sql](src/main/resources/db/seed-rbac.sql) 恢复 2 个角色、16 项权限和 26 条角色权限关联，不要重跑历史结构迁移。已有管理员缺角色时，在脚本中显式填写 `@harness_rbac_admin_user_id`；默认 NULL 不为任何已有用户提权。
+   项目与会话名称编辑、删除功能部署前，执行 [migration-project-conversation-management.sql](src/main/resources/db/migration-project-conversation-management.sql)，为内置角色及已有对应创建权限的角色补齐修改、删除权限，可重复执行。
+   若表结构完整但角色/权限被清空，单独执行 [seed-rbac.sql](src/main/resources/db/seed-rbac.sql) 恢复 2 个角色、20 项权限和 34 条角色权限关联，不要重跑历史结构迁移。已有管理员缺角色时，在脚本中显式填写 `@harness_rbac_admin_user_id`；默认 NULL 不为任何已有用户提权。
 2. 在 PowerShell 中设置本地配置：
 
 ```powershell
@@ -40,6 +41,8 @@ mvn spring-boot:run
 
 上传、下载与 Agent 生成文件统一使用项目工作区。消息附件仅保留关联与校验，平台传输存储配置为 `harness.workspace-files`，默认目录为 `${project.folder}/workspace-file-storage`。旧模块清理与数据库升级见 [Workspace 文件方案](../../docs/workspace-files.md)。
 
+文件重命名、目录删除、文件移动和多选 ZIP 下载需要新增 [文件操作数据库迁移](src/main/resources/db/migration-workspace-file-actions.sql)，并配套升级 Agent/前端。已有数据库按一次性脚本升级；全新环境直接使用更新后的完整 schema。详细能力、限制与未知结果恢复见 [升级与验收](../../docs/workspace-file-actions-release.md)。
+
 ## 已实现接口
 
 - `POST /api/v1/auth/login`
@@ -55,9 +58,13 @@ mvn spring-boot:run
 - `POST /api/v1/projects`
 - `GET /api/v1/projects`
 - `GET /api/v1/projects/{projectId}`
+- `PUT /api/v1/projects/{projectId}`（`{ "projectName": "项目名称" }`）
+- `DELETE /api/v1/projects/{projectId}`
 - `POST /api/v1/projects/{projectId}/conversations`
 - `GET /api/v1/projects/{projectId}/conversations`
 - `GET /api/v1/projects/{projectId}/conversations/{id}`
+- `PUT /api/v1/projects/{projectId}/conversations/{id}`（`{ "title": "会话名称" }`）
+- `DELETE /api/v1/projects/{projectId}/conversations/{id}`
 - `GET /api/v1/projects/{projectId}/conversations/{id}/active-turn`
 - `GET /api/v1/projects/{projectId}/conversations/{id}/messages`
 - `GET /api/v1/projects/{projectId}/conversations/{id}/approvals`
@@ -68,6 +75,8 @@ mvn spring-boot:run
 - `POST /api/v1/skill-deployments/{id}/remove`
 
 一个 `agent_workspace` 只能绑定一个 `codex_project`。会话通过数据库复合外键同时锁定项目、用户、设备和工作区；项目会话接口检查当前用户、归属和机器授权。Agent 连接 `/ws/agent`，浏览器先以 JWT 调用 `POST /api/v1/auth/socket-ticket`，再连接 `/ws/client?ticket=<一次性票据>`；不再接受长期 JWT 查询参数。生产环境应通过同源反向代理提供 HTTPS/WSS。用户管理、新接口和迁移说明见 [用户与机器授权](../../docs/user-device-rbac.md)。
+
+名称修改仅影响展示名称，不改变 Workspace 路径或 Codex Thread。删除会移除平台内的项目/会话及会话历史和附件关联；项目独占 Workspace 标记为不可用，Device 上的实际文件保留。若相关会话仍有 CREATED、RUNNING 或 WAITING_APPROVAL 状态的 Turn，删除返回 409，需先停止任务。准备中或初始化中的项目/会话可删除，晚到的 Agent 回调不会恢复已删除记录。工作区传输操作失效，平台临时传输文件由现有清理任务回收。
 
 除 Agent 注册和 Skill 下载接口外，`/api/v1/**` 均要求 `Authorization: Bearer <JWT>`。
 

@@ -67,7 +67,7 @@ public class AgentEventServiceImpl implements AgentEventService {
                 deviceMapper.insertEvent(deviceId,envelope.getMessageId(),type.name(),envelope.getTimestamp()) != 1) return false;
         JsonNode payload = envelope.getPayload();
         LocalDateTime now = LocalDateTime.now();
-        if(type==AgentEventType.ERROR && java.util.Set.of("SYNC_WORKSPACE_TREE","CREATE_WORKSPACE_DIRECTORY","UPLOAD_WORKSPACE_FILE","PREPARE_WORKSPACE_DOWNLOAD").contains(payload.path("commandType").asText())) {
+        if(type==AgentEventType.ERROR && java.util.Set.of("SYNC_WORKSPACE_TREE","CREATE_WORKSPACE_DIRECTORY","UPLOAD_WORKSPACE_FILE","PREPARE_WORKSPACE_DOWNLOAD","RELOCATE_WORKSPACE_ENTRY","PREPARE_WORKSPACE_DELETE","DELETE_WORKSPACE_ENTRY","PREPARE_WORKSPACE_ARCHIVE","RECONCILE_WORKSPACE_OPERATION").contains(payload.path("commandType").asText())) {
             agentError(deviceId,envelope,payload,now);
             return true; // File metadata is never broadcast to unrelated administrators.
         }
@@ -81,6 +81,10 @@ public class AgentEventServiceImpl implements AgentEventService {
                 }
                 return true;
             case REGISTER:
+                deviceMapper.workspaceFileLimits(deviceId,payload.path("workspaceFileLimits").isObject() && payload.path("workspaceFileLimits").toString().length()<2048 ? payload.path("workspaceFileLimits").toString() : null);
+                deviceMapper.workspaceActionsCapability(deviceId,
+                        payload.path("capabilities").isArray() && java.util.stream.StreamSupport.stream(payload.path("capabilities").spliterator(),false).anyMatch(v -> "WORKSPACE_FILE_MUTATIONS_V1".equals(v.asText())),
+                        payload.path("capabilities").isArray() && java.util.stream.StreamSupport.stream(payload.path("capabilities").spliterator(),false).anyMatch(v -> "WORKSPACE_ARCHIVE_DOWNLOAD_V1".equals(v.asText())));
                 deviceMapper.workspaceFilesCapability(deviceId,payload.path("capabilities").isArray() && java.util.stream.StreamSupport.stream(payload.path("capabilities").spliterator(),false).anyMatch(v -> "WORKSPACE_FILES_V1".equals(v.asText())));
                 afterFileCommit(() -> workspaceFiles.reconnected(deviceId));
                 deviceMapper.attachmentCapability(deviceId,payload.path("capabilities").isArray() && java.util.stream.StreamSupport.stream(payload.path("capabilities").spliterator(),false).anyMatch(v -> "CONVERSATION_ATTACHMENTS_V1".equals(v.asText())));
@@ -248,8 +252,8 @@ public class AgentEventServiceImpl implements AgentEventService {
     }
     private void agentError(Long deviceId, AgentProtocolEnvelope envelope, JsonNode payload, LocalDateTime now) {
         String command=optionalText(payload,"commandType",32), code=optionalText(payload,"errorCode",64);
-        if(java.util.Set.of("SYNC_WORKSPACE_TREE","CREATE_WORKSPACE_DIRECTORY","UPLOAD_WORKSPACE_FILE","PREPARE_WORKSPACE_DOWNLOAD").contains(command==null ? "" : command)) {
-            afterFileCommit(() -> workspaceFiles.commandError(deviceId,envelope.getCorrelationId(),optionalText(payload,"message",1000)));
+        if(java.util.Set.of("SYNC_WORKSPACE_TREE","CREATE_WORKSPACE_DIRECTORY","UPLOAD_WORKSPACE_FILE","PREPARE_WORKSPACE_DOWNLOAD","RELOCATE_WORKSPACE_ENTRY","PREPARE_WORKSPACE_DELETE","DELETE_WORKSPACE_ENTRY","PREPARE_WORKSPACE_ARCHIVE","RECONCILE_WORKSPACE_OPERATION").contains(command==null ? "" : command)) {
+            afterFileCommit(() -> workspaceFiles.commandError(deviceId,envelope.getCorrelationId(),command,code,optionalText(payload,"message",1000)));
             return;
         }
         if ("START_THREAD".equals(command)) conversationMapper.failConversation(parseId(envelope.getCorrelationId(),"conversation correlationId"),deviceId,now);

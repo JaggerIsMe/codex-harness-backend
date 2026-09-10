@@ -4,6 +4,22 @@ import org.apache.ibatis.annotations.*;
 import java.util.List;
 import java.time.LocalDateTime;
 public interface ConversationAttachmentMapper {
+    @Select("SELECT id FROM codex_project WHERE id=#{id} FOR UPDATE")
+    Long lockProject(Long id);
+    String LOCATION_MATCH = "project_id=#{pid} AND status IN ('PENDING','ATTACHED') AND " +
+            "(BINARY workspace_path=BINARY #{path} OR BINARY LEFT(workspace_path,CHAR_LENGTH(#{path})+1)=BINARY CONCAT(#{path},'/'))";
+    @Select("SELECT * FROM conversation_attachment WHERE " + LOCATION_MATCH + " ORDER BY conversation_id,id")
+    List<ConversationAttachmentPO> atLocation(@Param("pid") Long pid,@Param("path") String path);
+    @Select("SELECT COUNT(*) FROM conversation_attachment WHERE " + LOCATION_MATCH + " AND workspace_location_state='AVAILABLE'")
+    long countAvailableAtLocation(@Param("pid") Long pid,@Param("path") String path);
+    @Update("UPDATE conversation_attachment SET last_file_operation_id=#{operationId} WHERE id=#{id} " +
+            "AND location_revision=#{revision} AND workspace_location_state='AVAILABLE' AND status IN ('PENDING','ATTACHED')")
+    int claimLocation(@Param("id") Long id,@Param("revision") long revision,@Param("operationId") Long operationId);
+    @Update("UPDATE conversation_attachment SET workspace_path=#{path},workspace_location_state=#{state}," +
+            "location_revision=location_revision+1 WHERE id=#{id} AND location_revision=#{revision} " +
+            "AND last_file_operation_id=#{operationId} AND status IN ('PENDING','ATTACHED')")
+    int updateLocation(@Param("id") Long id,@Param("revision") long revision,@Param("operationId") Long operationId,
+            @Param("path") String path,@Param("state") String state);
     @Update("UPDATE conversation_attachment SET workspace_path=#{path},workspace_operation_id=#{operationId} WHERE id=#{id}")
     int workspace(@Param("id") Long id,@Param("path") String path,@Param("operationId") Long operationId);
     @Insert("INSERT INTO conversation_attachment(user_id,project_id,conversation_id,file_name,storage_key,media_type,size_bytes,sha256,status) VALUES(#{userId},#{projectId},#{conversationId},#{fileName},#{storageKey},#{mediaType},#{sizeBytes},#{sha256},'PENDING')")

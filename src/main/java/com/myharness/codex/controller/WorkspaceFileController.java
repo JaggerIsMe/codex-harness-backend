@@ -1,6 +1,7 @@
 package com.myharness.codex.controller;
 
 import com.myharness.codex.entity.dto.WorkspaceFileRequestDTO;
+import com.myharness.codex.entity.dto.WorkspaceFileActionRequestDTO;
 import com.myharness.codex.entity.vo.*;
 import com.myharness.codex.security.UserContext;
 import com.myharness.codex.service.WorkspaceFileService;
@@ -37,6 +38,41 @@ public class WorkspaceFileController {
     @GetMapping("/operations/{id}")
     public ApiResponseVO<WorkspaceFileOperationVO> operation(@PathVariable Long pid,@PathVariable Long id) {
         return ApiResponseVO.success(files.operation(pid,user(),id));
+    }
+    @PostMapping("/renames")
+    public ApiResponseVO<WorkspaceFileOperationVO> rename(@PathVariable Long pid,@jakarta.validation.Valid @RequestBody WorkspaceFileActionRequestDTO request) {
+        return ApiResponseVO.success(files.rename(pid,user(),request));
+    }
+    @PostMapping("/moves")
+    public ApiResponseVO<WorkspaceFileOperationVO> move(@PathVariable Long pid,@jakarta.validation.Valid @RequestBody WorkspaceFileActionRequestDTO request) {
+        return ApiResponseVO.success(files.move(pid,user(),request));
+    }
+    @PostMapping("/delete-plans")
+    public ApiResponseVO<WorkspaceFileOperationVO> deletePlan(@PathVariable Long pid,@jakarta.validation.Valid @RequestBody WorkspaceFileActionRequestDTO request) {
+        return ApiResponseVO.success(files.deletePlan(pid,user(),request));
+    }
+    @PostMapping("/deletions")
+    public ApiResponseVO<WorkspaceFileOperationVO> delete(@PathVariable Long pid,@jakarta.validation.Valid @RequestBody WorkspaceFileActionRequestDTO request) {
+        return ApiResponseVO.success(files.delete(pid,user(),request));
+    }
+    @PostMapping("/archive-downloads")
+    public ApiResponseVO<WorkspaceFileOperationVO> archive(@PathVariable Long pid,@jakarta.validation.Valid @RequestBody WorkspaceFileActionRequestDTO request) {
+        return ApiResponseVO.success(files.archive(pid,user(),request));
+    }
+    @GetMapping("/operations")
+    public ApiResponseVO<WorkspaceFilePageVO<WorkspaceFileOperationVO>> recent(@PathVariable Long pid,
+            @RequestParam(required=false) String cursor,@RequestParam(defaultValue="20") int limit) {
+        return ApiResponseVO.success(files.recent(pid,user(),cursor,limit));
+    }
+    @GetMapping("/operations/{id}/items")
+    public ApiResponseVO<WorkspaceFilePageVO<com.myharness.codex.entity.dto.WorkspaceFileItemsDTO.Item>> items(@PathVariable Long pid,@PathVariable Long id,
+            @RequestParam(required=false) String cursor,@RequestParam(defaultValue="100") int limit) {
+        return ApiResponseVO.success(files.items(pid,user(),id,cursor,limit));
+    }
+    @PostMapping("/operations/{id}/reconcile")
+    public ApiResponseVO<WorkspaceFileOperationVO> reconcile(@PathVariable Long pid,@PathVariable Long id,
+            @jakarta.validation.Valid @RequestBody WorkspaceFileActionRequestDTO request) {
+        return ApiResponseVO.success(files.reconcile(pid,user(),id,request.requestKey()));
     }
     @GetMapping("/operations/{id}/content")
     public ResponseEntity<Resource> content(@PathVariable Long pid,@PathVariable Long id) throws IOException {

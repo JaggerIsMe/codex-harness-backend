@@ -3,9 +3,12 @@ package com.myharness.codex.websocket;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myharness.codex.config.AgentProperties;
 import com.myharness.codex.entity.dto.AgentProtocolEnvelope;
+import com.myharness.codex.entity.dto.WorkspaceFileCommandDTO;
 import com.myharness.codex.gateway.AgentCommand;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.Collections;
 
@@ -20,6 +23,19 @@ class AgentProtocolCodecTest {
         assertTrue(json.contains("\"protocolVersion\":\"1.0\""));
         assertTrue(json.contains("\"messageId\":\"8ad73b79-4ff6-4b56-b0d2-434be6a42112\""));
         assertTrue(json.contains("\"deviceCode\":\"device-1\""));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"RELOCATE_WORKSPACE_ENTRY", "PREPARE_WORKSPACE_DELETE",
+            "DELETE_WORKSPACE_ENTRY", "PREPARE_WORKSPACE_ARCHIVE", "RECONCILE_WORKSPACE_OPERATION"})
+    void encodesWorkspaceActionCommands(String type) throws Exception {
+        var payload = new WorkspaceFileCommandDTO("7", "2", "demo", "docs", "", 0, null);
+        String encoded = codec.encodeCommand("device-1", new AgentCommand(type, "7", payload,
+                "8ad73b79-4ff6-4b56-b0d2-434be6a42112"));
+        var envelope = new ObjectMapper().readTree(encoded);
+        assertEquals(type, envelope.get("type").asText());
+        assertEquals("7", envelope.get("correlationId").asText());
+        assertEquals("docs", envelope.path("payload").path("path").asText());
     }
 
     @Test void decodesValidEventAndRejectsWrongDevice() {

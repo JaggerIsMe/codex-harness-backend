@@ -9,8 +9,10 @@ import java.util.List;
 
 public interface ProjectMapper {
     String PROJECT_FROM = "FROM codex_project p JOIN agent_device d ON d.id=p.device_id JOIN agent_workspace w ON w.id=p.workspace_id ";
+    // Compare ASCII device codes with Unicode keywords while preserving case-sensitive matching.
     String PROJECT_KEYWORD_MATCH = "LOCATE(#{keyword},p.project_name)>0 OR LOCATE(#{keyword},d.device_name)>0 " +
-            "OR LOCATE(#{keyword},d.device_code)>0 OR LOCATE(#{keyword},w.workspace_name)>0 OR LOCATE(#{keyword},w.root_path)>0";
+            "OR LOCATE(#{keyword},CONVERT(d.device_code USING utf8mb4) COLLATE utf8mb4_bin)>0 " +
+            "OR LOCATE(#{keyword},w.workspace_name)>0 OR LOCATE(#{keyword},w.root_path)>0";
     String OWNED_PROJECT_FILTER = "WHERE p.user_id=#{userId} AND EXISTS(SELECT 1 FROM user_device_assignment a " +
             "WHERE a.user_id=p.user_id AND a.device_id=p.device_id AND a.status='ENABLED') " +
             "AND (#{keyword}='' OR " + PROJECT_KEYWORD_MATCH + " OR EXISTS(SELECT 1 FROM conversation search_conversation " +

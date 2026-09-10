@@ -1,6 +1,15 @@
 package com.myharness.codex.entity.po;
 
 public class ConversationAttachmentPO {
+    private String workspaceLocationState = "AVAILABLE";
+    private long locationRevision;
+    private Long lastFileOperationId;
+    public String getWorkspaceLocationState() {return workspaceLocationState;}
+    public void setWorkspaceLocationState(String value) {workspaceLocationState=value;}
+    public long getLocationRevision() {return locationRevision;}
+    public void setLocationRevision(long value) {locationRevision=value;}
+    public Long getLastFileOperationId() {return lastFileOperationId;}
+    public void setLastFileOperationId(Long value) {lastFileOperationId=value;}
     private String workspacePath;
     private Long workspaceOperationId;
     public String getWorkspacePath() {return workspacePath;}

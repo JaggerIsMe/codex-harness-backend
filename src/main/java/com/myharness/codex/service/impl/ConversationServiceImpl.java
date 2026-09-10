@@ -93,6 +93,8 @@ public class ConversationServiceImpl implements ConversationService {
         if (workspace==null || !"ENABLED".equals(workspace.getStatus())) throw new BusinessException(ErrorCode.CONFLICT,"项目执行目录当前不可用");
         ConversationPO conversation=transactions.execute(status -> {
             experts.lockProject(projectId);
+            // A deletion can commit after the initial readiness check but before this lock.
+            requireActiveProject(projectId,operatorId);
             ConversationPO value=new ConversationPO();
             value.setUserId(operatorId); value.setDeviceId(device.getId()); value.setWorkspaceId(workspace.getId());
             value.setProjectId(project.getId());
@@ -130,6 +132,10 @@ public class ConversationServiceImpl implements ConversationService {
             turn=transactions.execute(status -> {
                 Long projectRevision=experts.lockProject(projectId);
                 ConversationPO locked=conversationMapper.lockConversation(conversationId);
+                if(locked==null || !operatorId.equals(locked.getUserId()) || !projectId.equals(locked.getProjectId()))
+                    throw new BusinessException(ErrorCode.NOT_FOUND,"会话不存在");
+                if(!"ACTIVE".equals(locked.getStatus()))
+                    throw new BusinessException(ErrorCode.CONFLICT,"会话当前不可执行");
                 threadModelRuntimeKey.set(locked.getModelRuntimeKey());
                 if(dto.getClientRequestId()!=null) {
                     ConversationTurnPO previous=conversationMapper.byClientRequest(conversationId,dto.getClientRequestId());
@@ -138,6 +144,7 @@ public class ConversationServiceImpl implements ConversationService {
                         return previous;
                     }
                 }
+                if(workspaceFiles!=null) workspaceFiles.assertNoMutation(projectId);
                 AgentDevicePO online=requireOnline(conversation.getDeviceId());
                 if(!dto.getAttachmentIds().isEmpty() && !Boolean.TRUE.equals(online.getConversationAttachments()))
                     throw new BusinessException(ErrorCode.CONFLICT,"请升级 Agent 以支持会话附件");

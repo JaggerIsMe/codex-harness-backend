@@ -31,8 +31,10 @@ class WorkspacePaginationMysqlTest {
                        '2026-09-09 12:00:00' created_at,'2026-09-09 12:00:00' updated_at,NULL request_key
                 FROM (__PROJECT_IDS__) numbers
             ), agent_device AS (
-                SELECT 10 id,'device-code' device_code,'Office computer' device_name,'ONLINE' status
-                UNION ALL SELECT 11,'revoked-device','Revoked computer','ONLINE'
+                SELECT 10 id,CAST('device-code' AS CHAR CHARACTER SET ascii) COLLATE ascii_bin device_code,
+                       'Office computer' device_name,'ONLINE' status
+                UNION ALL SELECT 11,CAST('revoked-device' AS CHAR CHARACTER SET ascii) COLLATE ascii_bin,
+                       'Revoked computer','ONLINE'
             ), agent_workspace AS (
                 SELECT 20 id,'workspace-name' workspace_name,'D:/work-root' root_path,'ENABLED' status,
                        NULL failure_code,NULL failure_message
@@ -53,6 +55,11 @@ class WorkspacePaginationMysqlTest {
                 SELECT 203 turn_id,'ASSISTANT' role,'COMPLETED' status
             )
             """.replace("__PROJECT_IDS__",numbers(125)).replace("__CONVERSATION_IDS__",numbers(205));
+
+    private static final String UNICODE_SEARCH_FIXTURES=FIXTURES
+            .replace("CONCAT('Project ',id) project_name",
+                    "IF(id=9,'中文项目🧪',CONCAT('Project ',id)) project_name")
+            .replace("'older-needle'","'中文会话🧪'");
 
     private static final String ACTIVE_PROJECT_FIXTURES=FIXTURES
             .replace("'2026-09-09 12:00:00' created_at",
@@ -163,6 +170,43 @@ class WorkspacePaginationMysqlTest {
     }
 
     @Test
+    void projectSearchHandlesUnicodeNamesTitlesAndNoMatchesAlongsideAsciiDeviceCodes() {
+        withConnection(connection -> {
+            for(String keyword:List.of("中文项目","中文会话","🧪")) {
+                var args=arguments(keyword,20,0);
+                assertThat(count(connection,UNICODE_SEARCH_FIXTURES,"ProjectMapper.countOwnedProjects",args)).isEqualTo(1);
+                assertThat(ids(connection,UNICODE_SEARCH_FIXTURES,"ProjectMapper.selectOwnedProjects",args)).containsExactly(9L);
+            }
+            for(String keyword:List.of("测试不存在","DEVICE-CODE")) {
+                var missing=arguments(keyword,20,0);
+                assertThat(count(connection,UNICODE_SEARCH_FIXTURES,"ProjectMapper.countOwnedProjects",missing)).isZero();
+                assertThat(ids(connection,UNICODE_SEARCH_FIXTURES,"ProjectMapper.selectOwnedProjects",missing)).isEmpty();
+            }
+            assertThat(count(connection,UNICODE_SEARCH_FIXTURES,"ProjectMapper.countOwnedProjects",arguments("device-code",20,0)))
+                    .isEqualTo(123);
+        });
+    }
+
+    @Test
+    void conversationSearchHandlesUnicodeProjectAndConversationMatchesAlongsideAsciiDeviceCodes() {
+        withConnection(connection -> {
+            var title=arguments("中文会话",20,0);
+            assertThat(count(connection,UNICODE_SEARCH_FIXTURES,"ConversationMapper.countProjectConversations",title)).isEqualTo(1);
+            assertThat(ids(connection,UNICODE_SEARCH_FIXTURES,"ConversationMapper.selectProjectConversations",title)).containsExactly(1L);
+            for(String keyword:List.of("中文项目","🧪","device-code")) {
+                var args=arguments(keyword,20,200);
+                assertThat(count(connection,UNICODE_SEARCH_FIXTURES,"ConversationMapper.countProjectConversations",args)).isEqualTo(203);
+                assertThat(ids(connection,UNICODE_SEARCH_FIXTURES,"ConversationMapper.selectProjectConversations",args)).containsExactly(3L,2L,1L);
+            }
+            for(String keyword:List.of("测试不存在","DEVICE-CODE")) {
+                var missing=arguments(keyword,20,0);
+                assertThat(count(connection,UNICODE_SEARCH_FIXTURES,"ConversationMapper.countProjectConversations",missing)).isZero();
+                assertThat(ids(connection,UNICODE_SEARCH_FIXTURES,"ConversationMapper.selectProjectConversations",missing)).isEmpty();
+            }
+        });
+    }
+
+    @Test
     void statusQueryOnlyReadsRequestedOwnedIdsAndAnEmptyIdSetCannotBecomeAnUnboundedRead() {
         withConnection(connection -> {
             var args=arguments("",20,0);
@@ -205,7 +249,11 @@ class WorkspacePaginationMysqlTest {
     }
 
     private long count(Connection connection,String method,Map<String,Object> args) throws Exception {
-        return query(connection,method,args,rows -> {assertThat(rows.next()).isTrue();return rows.getLong(1);});
+        return count(connection,FIXTURES,method,args);
+    }
+
+    private long count(Connection connection,String fixtures,String method,Map<String,Object> args) throws Exception {
+        return query(connection,fixtures,method,args,rows -> {assertThat(rows.next()).isTrue();return rows.getLong(1);});
     }
 
     private <T> T query(Connection connection,String method,Map<String,Object> args,RowRead<T> read) throws Exception {

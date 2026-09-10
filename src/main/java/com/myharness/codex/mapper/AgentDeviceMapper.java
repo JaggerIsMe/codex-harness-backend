@@ -13,6 +13,10 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public interface AgentDeviceMapper {
+    @Update("UPDATE agent_device SET workspace_file_mutations=#{mutations},workspace_archive_download=#{archive} WHERE id=#{id}")
+    int workspaceActionsCapability(@Param("id") Long id,@Param("mutations") boolean mutations,@Param("archive") boolean archive);
+    @Update("UPDATE agent_device SET workspace_file_limits=#{limits} WHERE id=#{id}")
+    int workspaceFileLimits(@Param("id") Long id,@Param("limits") String limits);
     @Update("UPDATE agent_device SET workspace_files=#{supported} WHERE id=#{id}")
     int workspaceFilesCapability(@Param("id") Long id,@Param("supported") boolean supported);
     @Update("UPDATE agent_device SET project_experts=#{supported} WHERE id=#{id}")
@@ -38,15 +42,15 @@ public interface AgentDeviceMapper {
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(AgentDevicePO device);
 
-    @Select("SELECT id,enrollment_id,device_code,device_name,token_hash,status,agent_version,os_name,os_version,isolation_mode,conversation_attachments,project_experts,expert_mcp,managed_models,model_runtime_targets,workspace_files,last_heartbeat_at " +
+    @Select("SELECT id,enrollment_id,device_code,device_name,token_hash,status,agent_version,os_name,os_version,isolation_mode,conversation_attachments,project_experts,expert_mcp,managed_models,model_runtime_targets,workspace_files,workspace_file_mutations,workspace_archive_download,workspace_file_limits,last_heartbeat_at " +
             "FROM agent_device WHERE device_code=#{deviceCode}")
     AgentDevicePO selectByCode(@Param("deviceCode") String deviceCode);
 
-    @Select("SELECT id,enrollment_id,device_code,device_name,token_hash,status,agent_version,os_name,os_version,isolation_mode,conversation_attachments,project_experts,expert_mcp,managed_models,model_runtime_targets,workspace_files,last_heartbeat_at " +
+    @Select("SELECT id,enrollment_id,device_code,device_name,token_hash,status,agent_version,os_name,os_version,isolation_mode,conversation_attachments,project_experts,expert_mcp,managed_models,model_runtime_targets,workspace_files,workspace_file_mutations,workspace_archive_download,workspace_file_limits,last_heartbeat_at " +
             "FROM agent_device WHERE id=#{id}")
     AgentDevicePO selectById(@Param("id") Long id);
 
-    @Select("SELECT id,enrollment_id,device_code,device_name,token_hash,status,agent_version,os_name,os_version,isolation_mode,conversation_attachments,project_experts,expert_mcp,managed_models,model_runtime_targets,workspace_files,last_heartbeat_at " +
+    @Select("SELECT id,enrollment_id,device_code,device_name,token_hash,status,agent_version,os_name,os_version,isolation_mode,conversation_attachments,project_experts,expert_mcp,managed_models,model_runtime_targets,workspace_files,workspace_file_mutations,workspace_archive_download,workspace_file_limits,last_heartbeat_at " +
             "FROM agent_device ORDER BY created_at DESC")
     List<AgentDevicePO> selectAll();
 
@@ -59,7 +63,7 @@ public interface AgentDeviceMapper {
     @Update("UPDATE agent_device SET status='OFFLINE' WHERE status='ONLINE' AND (last_heartbeat_at IS NULL OR last_heartbeat_at<#{deadline})")
     int markTimedOutOffline(@Param("deadline") LocalDateTime deadline);
 
-    @Select("SELECT id,enrollment_id,device_code,device_name,token_hash,status,agent_version,os_name,os_version,isolation_mode,conversation_attachments,project_experts,expert_mcp,managed_models,model_runtime_targets,workspace_files,last_heartbeat_at " +
+    @Select("SELECT id,enrollment_id,device_code,device_name,token_hash,status,agent_version,os_name,os_version,isolation_mode,conversation_attachments,project_experts,expert_mcp,managed_models,model_runtime_targets,workspace_files,workspace_file_mutations,workspace_archive_download,workspace_file_limits,last_heartbeat_at " +
             "FROM agent_device WHERE status='ONLINE' AND (last_heartbeat_at IS NULL OR last_heartbeat_at<#{deadline})")
     List<AgentDevicePO> selectTimedOut(@Param("deadline") LocalDateTime deadline);
 

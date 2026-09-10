@@ -3,6 +3,11 @@ package com.myharness.codex.entity.po;
 import java.time.LocalDateTime;
 
 public class AgentDevicePO {
+    private Boolean workspaceFileMutations,workspaceArchiveDownload;
+    private String workspaceFileLimits;
+    public String getWorkspaceFileLimits(){return workspaceFileLimits;} public void setWorkspaceFileLimits(String v){workspaceFileLimits=v;}
+    public Boolean getWorkspaceFileMutations(){return workspaceFileMutations;} public void setWorkspaceFileMutations(Boolean v){workspaceFileMutations=v;}
+    public Boolean getWorkspaceArchiveDownload(){return workspaceArchiveDownload;} public void setWorkspaceArchiveDownload(Boolean v){workspaceArchiveDownload=v;}
     private Boolean workspaceFiles;
     public Boolean getWorkspaceFiles() { return workspaceFiles; }
     public void setWorkspaceFiles(Boolean value) { workspaceFiles=value; }

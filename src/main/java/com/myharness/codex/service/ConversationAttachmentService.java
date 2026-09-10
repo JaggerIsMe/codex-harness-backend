@@ -73,6 +73,8 @@ public class ConversationAttachmentService {
             p.setMediaType(detectMediaType(temporary));
             Files.move(temporary,target,StandardCopyOption.ATOMIC_MOVE);
             transactions.execute(tx -> {
+                mapper.lockProject(pid);
+                workspaceFiles.assertNoMutation(pid);
                 conversations.lockConversation(cid);
                 owned(pid,cid,uid);
                 List<ConversationAttachmentPO> pending=mapper.pending(cid);
@@ -95,9 +97,24 @@ public class ConversationAttachmentService {
         owned(pid,cid,uid); return views(mapper.pending(cid));
     }
 
+    public WorkspaceFileOperationVO download(Long pid,Long cid,Long aid,Long uid,String requestKey) {
+        owned(pid,cid,uid);
+        return transactions.execute(tx -> {
+            mapper.lockProject(pid);
+            owned(pid,cid,uid);
+            workspaceFiles.assertNoMutation(pid);
+            ConversationAttachmentPO attachment=mapper.find(cid,aid);
+            if(attachment==null || !pid.equals(attachment.getProjectId()) || !uid.equals(attachment.getUserId())) throw missing();
+            requireAvailable(attachment);
+            workspaceFiles.requireUploaded(attachment);
+            return workspaceFiles.download(pid,uid,new com.myharness.codex.entity.dto.WorkspaceFileRequestDTO(attachment.getWorkspacePath(),requestKey));
+        });
+    }
+
     public void delete(Long pid,Long cid,Long aid,Long uid) throws IOException {
         owned(pid,cid,uid); access.requirePermission(uid,"turn:start");
         ConversationAttachmentPO p=transactions.execute(tx -> {
+            mapper.lockProject(pid);
             conversations.lockConversation(cid);
             ConversationAttachmentPO value=mapper.find(cid,aid);
             if(value==null) throw missing();
@@ -112,12 +129,13 @@ public class ConversationAttachmentService {
         if(ids==null || ids.isEmpty()) return List.of();
         if(ids.size()>properties.getMaxFiles() || new HashSet<>(ids).size()!=ids.size()) throw invalid("附件数量超限或重复");
         List<ConversationAttachmentPO> values=new ArrayList<>(); long total=0;
-        // All attachment mutations take the Conversation lock first, then rows in stable order.
+        // Caller holds Project then Conversation; attachment rows follow in stable order.
         for(Long id:ids.stream().sorted().toList()) {
             ConversationAttachmentPO p=mapper.lock(id);
             if(p==null || !c.getId().equals(p.getConversationId()) || !c.getUserId().equals(p.getUserId())
                     || !c.getProjectId().equals(p.getProjectId()) || !List.of("PENDING","ATTACHED").contains(p.getStatus())) throw missing();
             total+=p.getSizeBytes(); if(p.getSizeBytes()>properties.getMaxFileBytes() || total>properties.getMaxTotalBytes()) throw invalid("附件总大小超限");
+            requireAvailable(p);
             workspaceFiles.requireUploaded(p);
             values.add(p);
         }
@@ -139,7 +157,16 @@ public class ConversationAttachmentService {
     }
 
     public List<ConversationAttachmentVO> agentManifest(Long tid,String deviceCode,String authorization) {
-        requireAgentTurn(tid,deviceCode,authorization); return forTurn(tid);
+        requireAgentTurn(tid,deviceCode,authorization);
+        var attachments=mapper.forTurn(tid);
+        attachments.forEach(ConversationAttachmentService::requireAvailable);
+        return views(attachments);
+    }
+
+    private static void requireAvailable(ConversationAttachmentPO attachment) {
+        if(!"AVAILABLE".equals(attachment.getWorkspaceLocationState()))
+            throw new BusinessException(ErrorCode.CONFLICT,"MISSING".equals(attachment.getWorkspaceLocationState())
+                    ? "附件文件已删除，请移除附件或重新上传" : "附件文件位置尚待核实，请等待文件操作结果");
     }
 
     private void requireAgentTurn(Long tid,String code,String auth) {
@@ -184,6 +211,7 @@ public class ConversationAttachmentService {
         for(ConversationAttachmentPO p:mapper.expired(LocalDateTime.now().minusHours(24))) {
             try {
                 boolean deleted=Boolean.TRUE.equals(transactions.execute(tx -> {
+                    mapper.lockProject(p.getProjectId());
                     conversations.lockConversation(p.getConversationId());
                     ConversationAttachmentPO current=mapper.lock(p.getId());
                     return current!=null && ("DELETED".equals(current.getStatus()) || mapper.markDeleted(p.getId())==1);

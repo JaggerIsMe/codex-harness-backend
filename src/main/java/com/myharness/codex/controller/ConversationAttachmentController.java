@@ -40,6 +40,12 @@ public class ConversationAttachmentController {
         return ApiResponseVO.success(null);
     }
 
+    @PostMapping("/{aid}/downloads")
+    public ApiResponseVO<WorkspaceFileOperationVO> download(@PathVariable Long pid,@PathVariable Long cid,@PathVariable Long aid,
+            @jakarta.validation.Valid @RequestBody com.myharness.codex.entity.dto.AttachmentDownloadRequestDTO request) {
+        return ApiResponseVO.success(service.download(pid,cid,aid,user(),request.requestKey()));
+    }
+
     private Long user() {
         return UserContext.requireCurrentUser().getId();
     }

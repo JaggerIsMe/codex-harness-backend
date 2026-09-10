@@ -29,4 +29,9 @@ public class AgentWorkspaceFileController {
             @RequestHeader(HttpHeaders.AUTHORIZATION) String auth,@RequestHeader("X-Content-SHA256") String sha,HttpServletRequest request) throws IOException {
         files.receiveContent(id,code,auth,sha,request.getInputStream());return ApiResponseVO.success(null);
     }
+    @PutMapping(value="/items",consumes=MediaType.APPLICATION_JSON_VALUE)
+    public ApiResponseVO<Void> items(@PathVariable Long id,@RequestHeader("X-Harness-Device-Code") String code,
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String auth,@RequestHeader("X-Content-SHA256") String sha,HttpServletRequest request) throws IOException {
+        files.receiveItems(id,code,auth,sha,request.getInputStream());return ApiResponseVO.success(null);
+    }
 }
