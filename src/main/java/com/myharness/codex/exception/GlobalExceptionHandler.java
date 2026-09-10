@@ -2,6 +2,8 @@ package com.myharness.codex.exception;
 
 import com.myharness.codex.entity.enums.ErrorCode;
 import com.myharness.codex.entity.vo.ApiResponseVO;
+import com.myharness.codex.entity.vo.SendCodeVO;
+import com.myharness.codex.service.mail.MailRateLimitException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +24,14 @@ public class GlobalExceptionHandler {
     }
 
     private static final Logger LOGGER = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(MailRateLimitException.class)
+    public ResponseEntity<ApiResponseVO<SendCodeVO>> handleEmailRateLimit(MailRateLimitException exception) {
+        long retryAfter = exception.getRetryAfterSeconds();
+        ErrorCode error = exception.getErrorCode();
+        return ResponseEntity.status(error.getHttpStatus()).header("Retry-After", Long.toString(retryAfter))
+                .body(ApiResponseVO.error(error.getCode(), exception.getMessage(), new SendCodeVO((int)Math.min(Integer.MAX_VALUE, retryAfter))));
+    }
 
     @ExceptionHandler({org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class,
             org.springframework.web.bind.MissingServletRequestParameterException.class})

@@ -15,12 +15,12 @@ public class AuthorizationService {
     public AuthorizationService(RbacMapper rbac, SysUserMapper users) { this.rbac=rbac; this.users=users; }
     public SysUserPO requireEnabled(Long id) {
         SysUserPO user=users.selectById(id);
-        if(user==null || !"ENABLED".equals(user.getStatus())) throw new BusinessException(ErrorCode.UNAUTHORIZED);
+        if(user==null || !user.isActivated() || !"ENABLED".equals(user.getStatus())) throw new BusinessException(ErrorCode.UNAUTHORIZED);
         return user;
     }
     public boolean hasPermission(Long id,String permission) {
         SysUserPO user=users.selectById(id);
-        return user!=null && "ENABLED".equals(user.getStatus()) && !user.isMustChangePassword() && rbac.permissions(id).contains(permission);
+        return user!=null && user.isActivated() && "ENABLED".equals(user.getStatus()) && !user.isMustChangePassword() && rbac.permissions(id).contains(permission);
     }
     public void requirePermission(Long id,String permission) {
         if(!hasPermission(id,permission)) throw new BusinessException(ErrorCode.FORBIDDEN);

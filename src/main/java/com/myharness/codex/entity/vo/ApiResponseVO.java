@@ -26,6 +26,10 @@ public class ApiResponseVO<T> {
         return new ApiResponseVO<T>("error", code, info, null);
     }
 
+    public static <T> ApiResponseVO<T> error(int code, String info, T data) {
+        return new ApiResponseVO<>("error", code, info, data);
+    }
+
     public String getStatus() {
         return status;
     }

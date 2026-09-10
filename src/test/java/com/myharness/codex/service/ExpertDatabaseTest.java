@@ -36,7 +36,7 @@ class ExpertDatabaseTest {
                 new AuthorizationService(rbac,session.getMapper(SysUserMapper.class)),tx,new ObjectMapper(),properties,mcp);
         tx.executeWithoutResult(status -> {
             status.setRollbackOnly();
-            jdbc.update("INSERT INTO sys_user(id,username,password_hash,display_name,must_change_password) VALUES(901,'expert-test-admin','unused','Test',0),(902,'expert-test-other','unused','Other',0)");
+            jdbc.update("INSERT INTO sys_user(id,email,password_hash,display_name,must_change_password) VALUES(901,'expert-test-admin@example.test','unused','Test',0),(902,'expert-test-other@example.test','unused','Other',0)");
             jdbc.update("INSERT INTO sys_user_role SELECT 901,id FROM sys_role WHERE role_code='SYS_ADMIN'");
             jdbc.update("INSERT INTO sys_user_role SELECT 902,id FROM sys_role WHERE role_code='USER'");
             jdbc.update("INSERT INTO agent_device(id,device_code,device_name,token_hash,status,isolation_mode,project_experts) VALUES(901,'expert-test-device','Test',REPEAT('a',64),'ONLINE','WINDOWS_PROJECT_PROFILE',1),(902,'expert-other-device','Other',REPEAT('b',64),'ONLINE','WINDOWS_PROJECT_PROFILE',1)");

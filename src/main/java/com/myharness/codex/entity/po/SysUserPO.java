@@ -11,10 +11,20 @@ public class SysUserPO {
     public void setTokenVersion(long value) { tokenVersion=value; }
     public boolean isMustChangePassword() { return mustChangePassword; }
     public void setMustChangePassword(boolean value) { mustChangePassword=value; }
-    private String username;
+    private String email;
     private String passwordHash;
     private String displayName;
     private String status;
+    private LocalDateTime emailVerifiedAt;
+    private LocalDateTime activatedAt;
+
+    public LocalDateTime getEmailVerifiedAt() { return emailVerifiedAt; }
+    public void setEmailVerifiedAt(LocalDateTime value) { emailVerifiedAt = value; }
+    public LocalDateTime getActivatedAt() { return activatedAt; }
+    public void setActivatedAt(LocalDateTime value) { activatedAt = value; }
+    public boolean isActivated() {
+        return activatedAt != null && emailVerifiedAt != null && passwordHash != null && !passwordHash.isBlank();
+    }
     private LocalDateTime lastLoginAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -27,12 +37,12 @@ public class SysUserPO {
         this.id = id;
     }
 
-    public String getUsername() {
-        return username;
+    public String getEmail() {
+        return email;
     }
 
-    public void setUsername(String username) {
-        this.username = username;
+    public void setEmail(String email) {
+        this.email = email;
     }
 
     public String getPasswordHash() {

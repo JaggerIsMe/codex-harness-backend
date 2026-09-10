@@ -35,6 +35,14 @@
     <logger name="com.zaxxer.hikari" level="info"></logger>
     <logger name="io.lettuce.core" level="info"></logger>
     <logger name="org.springframework.data.redis" level="info"></logger>
+    <!-- Request/response bodies may contain passwords, activation tokens or access tokens. -->
+    <logger name="org.springframework.web.servlet.mvc.method.annotation.RequestResponseBodyMethodProcessor" level="info"/>
+    <logger name="org.springframework.web.servlet.mvc.method.annotation.HttpEntityMethodProcessor" level="info"/>
+    <logger name="com.myharness.codex.mapper.AccountEmailChallengeMapper" level="info"/>
+    <logger name="com.myharness.codex.mapper.MailDeliveryTaskMapper" level="info"/>
+    <logger name="com.myharness.codex.mapper.SysUserMapper" level="info"/>
+    <logger name="com.myharness.codex.mapper.RbacMapper" level="info"/>
+    <logger name="org.eclipse.angus.mail" level="info"/>
     <root level="${log.root.level}">
         <appender-ref ref="stdot"/>
         <appender-ref ref="file"/>

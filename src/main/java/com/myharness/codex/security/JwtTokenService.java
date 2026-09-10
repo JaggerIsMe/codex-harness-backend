@@ -27,17 +27,16 @@ public class JwtTokenService {
         this.properties = properties;
     }
 
-    public String createToken(Long userId, String username) {
-        return createToken(userId,username,0);
+    public String createToken(Long userId) {
+        return createToken(userId, 0);
     }
 
-    public String createToken(Long userId, String username, long version) {
+    public String createToken(Long userId, long version) {
         Instant issuedAt = Instant.now();
         Instant expiresAt = issuedAt.plus(properties.getJwtExpireMinutes(), ChronoUnit.MINUTES);
         return Jwts.builder()
                 .setIssuer(ISSUER)
                 .setSubject(String.valueOf(userId))
-                .claim("username", username)
                 .claim("version", version)
                 .setIssuedAt(Date.from(issuedAt))
                 .setExpiration(Date.from(expiresAt))

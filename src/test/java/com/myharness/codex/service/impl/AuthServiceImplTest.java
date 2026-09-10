@@ -49,24 +49,24 @@ class AuthServiceImplTest {
     @Test
     void shouldLoginEnabledUserAndUpdateLastLoginTime() {
         SysUserPO user = enabledUser();
-        when(sysUserMapper.selectByUsername("admin")).thenReturn(user);
+        when(sysUserMapper.selectByEmail("admin@example.test")).thenReturn(user);
 
-        LoginVO result = authService.login(loginDto("admin", "secret"));
+        LoginVO result = authService.login(loginDto("admin@example.test", "secret"));
 
         assertNotNull(result.getAccessToken());
         assertEquals(Long.valueOf(1L), jwtTokenService.parseUserId(result.getAccessToken()));
-        assertEquals("admin", result.getUser().getUsername());
+        assertEquals("admin@example.test", result.getUser().getEmail());
         assertEquals(7200L, result.getExpiresInSeconds());
         verify(sysUserMapper).updateLastLoginAt(org.mockito.ArgumentMatchers.eq(1L), any());
     }
 
     @Test
-    void shouldRejectIncorrectPasswordWithoutRevealingUsernameExistence() {
+    void shouldRejectIncorrectPasswordWithoutRevealingEmailExistence() {
         SysUserPO user = enabledUser();
-        when(sysUserMapper.selectByUsername("admin")).thenReturn(user);
+        when(sysUserMapper.selectByEmail("admin@example.test")).thenReturn(user);
 
         BusinessException exception = assertThrows(BusinessException.class,
-                () -> authService.login(loginDto("admin", "incorrect")));
+                () -> authService.login(loginDto("admin@example.test", "incorrect")));
 
         assertEquals(ErrorCode.INVALID_CREDENTIALS, exception.getErrorCode());
     }
@@ -75,10 +75,10 @@ class AuthServiceImplTest {
     void shouldRejectDisabledUser() {
         SysUserPO user = enabledUser();
         user.setStatus(UserStatus.DISABLED.name());
-        when(sysUserMapper.selectByUsername("admin")).thenReturn(user);
+        when(sysUserMapper.selectByEmail("admin@example.test")).thenReturn(user);
 
         BusinessException exception = assertThrows(BusinessException.class,
-                () -> authService.login(loginDto("admin", "secret")));
+                () -> authService.login(loginDto("admin@example.test", "secret")));
 
         assertEquals(ErrorCode.USER_DISABLED, exception.getErrorCode());
     }
@@ -86,16 +86,38 @@ class AuthServiceImplTest {
     private SysUserPO enabledUser() {
         SysUserPO user = new SysUserPO();
         user.setId(1L);
-        user.setUsername("admin");
+        user.setEmail("admin@example.test");
         user.setDisplayName("Administrator");
         user.setPasswordHash(passwordEncoder.encode("secret"));
         user.setStatus(UserStatus.ENABLED.name());
+        user.setActivatedAt(java.time.LocalDateTime.of(2026, 9, 10, 0, 0));
+        user.setEmailVerifiedAt(user.getActivatedAt());
         return user;
     }
 
-    private LoginDTO loginDto(String username, String password) {
+    @Test void pendingAccountCannotLoginEvenWithAStoredPassword() {
+        SysUserPO user = enabledUser();
+        user.setActivatedAt(null);
+        when(sysUserMapper.selectByEmail("admin@example.test")).thenReturn(user);
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> authService.login(loginDto("admin@example.test", "secret")));
+        assertEquals(ErrorCode.INVALID_CREDENTIALS, exception.getErrorCode());
+        org.mockito.Mockito.verify(sysUserMapper, org.mockito.Mockito.never()).updateLastLoginAt(any(), any());
+    }
+
+    @Test void normalizesEmailAndUsesStableIdentityInToken() {
+        when(sysUserMapper.selectByEmail("admin@example.test")).thenReturn(enabledUser());
+        LoginVO result = authService.login(loginDto("  ADMIN@EXAMPLE.TEST  ", "secret"));
+        var claims = jwtTokenService.parseClaims(result.getAccessToken());
+        assertEquals("1", claims.getSubject());
+        org.junit.jupiter.api.Assertions.assertFalse(claims.containsKey("username"));
+        org.junit.jupiter.api.Assertions.assertFalse(claims.containsKey("email"));
+        org.junit.jupiter.api.Assertions.assertTrue(result.getUser().isActivated());
+    }
+
+    private LoginDTO loginDto(String email, String password) {
         LoginDTO dto = new LoginDTO();
-        dto.setUsername(username);
+        dto.setEmail(email);
         dto.setPassword(password);
         return dto;
     }

@@ -50,7 +50,7 @@ class AttachmentDownloadHttpSecurityTest {
 
     @BeforeEach void setup() {
         reset(attachments,conversations,projects,access,users,files);
-        var user=new SysUserPO();user.setId(1L);user.setUsername("owner");
+        var user=new SysUserPO();user.setId(1L);user.setEmail("owner@example.test");
         when(users.authenticate(anyString())).thenThrow(new BusinessException(ErrorCode.UNAUTHORIZED));
         doReturn(user).when(users).authenticate("user-token");when(access.permissions(1L)).thenReturn(List.of("workspace:use"));
         var project=new ProjectPO();project.setId(2L);project.setStatus("ACTIVE");when(projects.selectOwned(2L,1L)).thenReturn(project);

@@ -11,7 +11,7 @@ import com.myharness.codex.exception.BusinessException;
 import com.myharness.codex.mapper.*;
 import com.myharness.codex.security.*;
 import com.myharness.codex.websocket.ClientEventWebSocketHandler;
-import org.springframework.dao.DuplicateKeyException;
+import com.myharness.codex.service.mail.AccountMailService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,33 +29,40 @@ public class UserManagementService {
     private final AuthorizationService access;
     private final ClientEventWebSocketHandler sockets;
     private final ObjectMapper json;
+    private final AccountEmailService accounts;
+    private final AccountMailService mail;
     public UserManagementService(RbacMapper rbac,SysUserMapper users,AgentDeviceMapper devices,ExpertMapper experts,PasswordEncoder passwords,
-                                 AuthorizationService access,ClientEventWebSocketHandler sockets,ObjectMapper json) {
+                                 AuthorizationService access,ClientEventWebSocketHandler sockets,ObjectMapper json,
+                                 AccountEmailService accounts,AccountMailService mail) {
         this.rbac=rbac;this.users=users;this.devices=devices;this.experts=experts;this.passwords=passwords;this.access=access;this.sockets=sockets;this.json=json;
+        this.accounts=accounts;this.mail=mail;
     }
     private Long administrator() { Long id=UserContext.requireCurrentUser().getId();access.requirePermission(id,"system:user:manage");return id; }
     public PageVO<ManagedUserVO> list(String keyword,String status,int page,int size) {
         administrator();
-        if(page<1 || page>100000 || size<1 || size>100 || status!=null && !status.isBlank() && !Set.of("ENABLED","DISABLED").contains(status))
+        if(page<1 || page>100000 || size<1 || size>100 || status!=null && !status.isBlank() && !Set.of("ENABLED","DISABLED","PENDING").contains(status))
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         String query=keyword==null?"":keyword.trim();
         return new PageVO<>(rbac.users(query,status,size,(page-1)*size).stream().map(this::view).toList(),rbac.countUsers(query,status),page,size);
     }
     public List<RoleVO> roles() { administrator(); return rbac.listRoles(); }
     @Transactional(isolation=Isolation.READ_COMMITTED) public ManagedUserVO create(CreateUserDTO dto) {
-        Long operator=administrator(); lockAdministration(); PasswordPolicy.validate(dto.password()); validateRole(dto.role()); validateDevices(dto.deviceIds());
-        SysUserPO user=new SysUserPO();user.setUsername(dto.username().trim());user.setDisplayName(dto.displayName().trim());
-        user.setPasswordHash(passwords.encode(dto.password()));user.setStatus("ENABLED");user.setMustChangePassword(true);
-        try { users.insert(user); } catch(DuplicateKeyException ex) { throw new BusinessException(ErrorCode.CONFLICT,"用户名已存在"); }
-        rbac.assignRole(user.getId(),dto.role());
-        for(Long device:new LinkedHashSet<>(dto.deviceIds())) rbac.assignDevice(user.getId(),device,operator);
-        audit(operator,"USER_CREATE",user.getId(),Map.of("role",dto.role(),"deviceIds",dto.deviceIds()));
+        Long operator=administrator(); lockAdministration(); validateRole(dto.role());
+        SysUserPO user=accounts.createInvitedUser(dto.email(),dto.role(),null,operator);
+        audit(operator,"USER_CREATE",user.getId(),Map.of("role",dto.role()));
         return view(user);
+    }
+    @Transactional(isolation=Isolation.READ_COMMITTED) public SendCodeVO resendActivation(Long id) {
+        Long operator=administrator();lockAdministration();requireLocked(id);
+        accounts.resendActivation(id);
+        audit(operator,"USER_ACTIVATION_RESEND",id,Map.of());
+        return new SendCodeVO(mail.resendCooldownSeconds());
     }
     @Transactional(isolation=Isolation.READ_COMMITTED) public ManagedUserVO update(Long id,UpdateUserDTO dto) {
         Long operator=administrator(); lockAdministration(); SysUserPO user=requireLocked(id);
         protectLastAdmin(user,dto.status(),rbac.roles(id));
         rbac.updateUser(id,dto.displayName().trim(),dto.status());
+        if("DISABLED".equals(dto.status())) accounts.revokeChallenges(id);
         audit(operator,"USER_UPDATE",id,Map.of("previousStatus",user.getStatus(),"status",dto.status(),"displayName",dto.displayName()));
         disconnectAfterCommit(id);return view(users.selectById(id));
     }
@@ -88,15 +95,20 @@ public class UserManagementService {
         return view(users.selectById(id));
     }
     @Transactional(isolation=Isolation.READ_COMMITTED) public void resetPassword(Long id,ResetPasswordDTO dto) {
-        Long operator=administrator();lockAdministration();requireLocked(id);PasswordPolicy.validate(dto.password());
-        rbac.changePassword(id,passwords.encode(dto.password()),true);audit(operator,"USER_PASSWORD_RESET",id,Map.of());disconnectAfterCommit(id);
+        Long operator=administrator();lockAdministration();SysUserPO user=requireLocked(id);PasswordPolicy.validate(dto.password());
+        if(!user.isActivated() || !"ENABLED".equals(user.getStatus()))
+            throw new BusinessException(ErrorCode.CONFLICT,"只能重置已激活且启用账号的密码");
+        rbac.changePassword(id,passwords.encode(dto.password()),true);accounts.revokeChallenges(id);
+        mail.enqueuePasswordChanged(user);audit(operator,"USER_PASSWORD_RESET",id,Map.of());disconnectAfterCommit(id);
     }
     @Transactional public void changeOwnPassword(ChangePasswordDTO dto) {
         Long id=UserContext.requireCurrentUser().getId();SysUserPO user=requireLocked(id);
+        if(!user.isActivated() || !"ENABLED".equals(user.getStatus())) throw new BusinessException(ErrorCode.UNAUTHORIZED);
         if(!passwords.matches(dto.currentPassword(),user.getPasswordHash())) throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
         PasswordPolicy.validate(dto.newPassword());
         if(passwords.matches(dto.newPassword(),user.getPasswordHash())) throw new BusinessException(ErrorCode.INVALID_REQUEST,"新密码不能与原密码相同");
-        rbac.changePassword(id,passwords.encode(dto.newPassword()),false);audit(id,"USER_PASSWORD_CHANGE",id,Map.of());disconnectAfterCommit(id);
+        rbac.changePassword(id,passwords.encode(dto.newPassword()),false);accounts.revokeChallenges(id);
+        mail.enqueuePasswordChanged(user);audit(id,"USER_PASSWORD_CHANGE",id,Map.of());disconnectAfterCommit(id);
     }
     /** Logout revokes every login credential of the account. */
     @Transactional public void logout() {
@@ -111,7 +123,7 @@ public class UserManagementService {
         SysUserPO user=rbac.lockUser(id);if(user==null) throw new BusinessException(ErrorCode.NOT_FOUND,"用户不存在");return user;
     }
     private void protectLastAdmin(SysUserPO user,String nextStatus,List<String> roles) {
-        if("ENABLED".equals(user.getStatus()) && rbac.roles(user.getId()).contains("SYS_ADMIN")
+        if(user.isActivated() && "ENABLED".equals(user.getStatus()) && rbac.roles(user.getId()).contains("SYS_ADMIN")
                 && (!"ENABLED".equals(nextStatus) || !roles.contains("SYS_ADMIN")) && rbac.enabledAdministrators()<=1)
             throw new BusinessException(ErrorCode.CONFLICT,"不能禁用或降级最后一名启用的管理员");
     }
@@ -119,7 +131,7 @@ public class UserManagementService {
     private void validateDevices(List<Long> ids) {
         for(Long id:new LinkedHashSet<>(ids)) if(devices.selectById(id)==null) throw new BusinessException(ErrorCode.INVALID_REQUEST,"机器不存在");
     }
-    private ManagedUserVO view(SysUserPO user) {return new ManagedUserVO(user,rbac.roles(user.getId()),rbac.deviceIds(user.getId()),rbac.expertIds(user.getId()));}
+    private ManagedUserVO view(SysUserPO user) {return new ManagedUserVO(user,rbac.roles(user.getId()),rbac.deviceIds(user.getId()),rbac.expertIds(user.getId()),mail.latestActivationStatus(user.getId()));}
     private void audit(Long operator,String action,Long target,Object detail) {
         try {rbac.audit(operator,action,"USER",String.valueOf(target),json.writeValueAsString(detail));}
         catch(JsonProcessingException ex) {throw new IllegalStateException(ex);}

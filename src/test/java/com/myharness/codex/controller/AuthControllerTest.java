@@ -32,24 +32,24 @@ class AuthControllerTest {
 
     @Test
     void shouldReturnUnifiedLoginResponse() throws Exception {
-        UserProfileVO user = new UserProfileVO(1L, "admin", "Administrator");
+        UserProfileVO user = new UserProfileVO(1L, "admin@example.test", "Administrator");
         when(authService.login(any())).thenReturn(new LoginVO("jwt-token", 7200L, user));
 
         mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"admin\",\"password\":\"secret\"}"))
+                        .content("{\"email\":\"admin@example.test\",\"password\":\"secret\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("success"))
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.accessToken").value("jwt-token"))
-                .andExpect(jsonPath("$.data.user.username").value("admin"));
+                .andExpect(jsonPath("$.data.user.email").value("admin@example.test"));
     }
 
     @Test
     void shouldReturnUnifiedValidationError() throws Exception {
         mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"\",\"password\":\"\"}"))
+                        .content("{\"email\":\"\",\"password\":\"\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value("error"))
                 .andExpect(jsonPath("$.code").value(400))
@@ -60,7 +60,7 @@ class AuthControllerTest {
     void shouldReturnUnifiedErrorForMalformedJson() throws Exception {
         mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":"))
+                        .content("{\"email\":"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value("error"))
                 .andExpect(jsonPath("$.code").value(400))

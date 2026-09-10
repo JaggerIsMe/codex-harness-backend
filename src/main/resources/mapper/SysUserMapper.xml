@@ -8,24 +8,26 @@
         <id property="id" column="id"/>
         <result property="tokenVersion" column="token_version"/>
         <result property="mustChangePassword" column="must_change_password"/>
-        <result property="username" column="username"/>
+        <result property="email" column="email"/>
         <result property="passwordHash" column="password_hash"/>
         <result property="displayName" column="display_name"/>
         <result property="status" column="status"/>
+        <result property="emailVerifiedAt" column="email_verified_at"/>
+        <result property="activatedAt" column="activated_at"/>
         <result property="lastLoginAt" column="last_login_at"/>
         <result property="createdAt" column="created_at"/>
         <result property="updatedAt" column="updated_at"/>
     </resultMap>
 
-    <select id="selectByUsername" resultMap="sysUserResultMap">
-        SELECT id, username, password_hash, display_name, status, token_version, must_change_password, last_login_at, created_at, updated_at
+    <select id="selectByEmail" resultMap="sysUserResultMap">
+        SELECT id, email, password_hash, display_name, status, email_verified_at, activated_at, token_version, must_change_password, last_login_at, created_at, updated_at
         FROM sys_user
-        WHERE username = #{username}
+        WHERE email = #{email}
         LIMIT 1
     </select>
 
     <select id="selectById" resultMap="sysUserResultMap">
-        SELECT id, username, password_hash, display_name, status, token_version, must_change_password, last_login_at, created_at, updated_at
+        SELECT id, email, password_hash, display_name, status, email_verified_at, activated_at, token_version, must_change_password, last_login_at, created_at, updated_at
         FROM sys_user
         WHERE id = #{id}
         LIMIT 1
@@ -33,8 +35,8 @@
 
     <insert id="insert" parameterType="com.myharness.codex.entity.po.SysUserPO"
             useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO sys_user (username, password_hash, display_name, status, must_change_password)
-        VALUES (#{username}, #{passwordHash}, #{displayName}, #{status}, #{mustChangePassword})
+        INSERT INTO sys_user (email, password_hash, display_name, status, must_change_password, email_verified_at, activated_at)
+        VALUES (#{email}, #{passwordHash}, #{displayName}, #{status}, #{mustChangePassword}, #{emailVerifiedAt}, #{activatedAt})
     </insert>
 
     <update id="updateLastLoginAt">

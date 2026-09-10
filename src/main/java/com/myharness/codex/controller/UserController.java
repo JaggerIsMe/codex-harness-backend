@@ -15,6 +15,7 @@ public class UserController {
         return ApiResponseVO.success(service.list(keyword,status,page,size));
     }
     @PostMapping("/users") public ApiResponseVO<ManagedUserVO> create(@Valid @RequestBody CreateUserDTO dto) {return ApiResponseVO.success(service.create(dto));}
+    @PostMapping("/users/{id}/activation-email") public ApiResponseVO<SendCodeVO> resendActivation(@PathVariable Long id) {return ApiResponseVO.success(service.resendActivation(id));}
     @PutMapping("/users/{id}") public ApiResponseVO<ManagedUserVO> update(@PathVariable Long id,@Valid @RequestBody UpdateUserDTO dto) {return ApiResponseVO.success(service.update(id,dto));}
     @PutMapping("/users/{id}/roles") public ApiResponseVO<ManagedUserVO> role(@PathVariable Long id,@Valid @RequestBody AssignRoleDTO dto) {return ApiResponseVO.success(service.role(id,dto));}
     @PutMapping("/users/{id}/devices") public ApiResponseVO<ManagedUserVO> devices(@PathVariable Long id,@Valid @RequestBody AssignDevicesDTO dto) {return ApiResponseVO.success(service.assignDevices(id,dto));}

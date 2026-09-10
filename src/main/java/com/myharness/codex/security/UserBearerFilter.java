@@ -26,7 +26,7 @@ public class UserBearerFilter extends OncePerRequestFilter {
             throws ServletException,IOException {
         String path=request.getServletPath();
         // These endpoints use Enrollment/Device credentials, or one-time WebSocket tickets.
-        if(!path.startsWith("/api/v1/") || path.equals("/api/v1/auth/login") || path.startsWith("/api/v1/agent/")) {
+        if(!path.startsWith("/api/v1/") || PublicAuthEndpoints.allows(request.getMethod(), path) || path.startsWith("/api/v1/agent/")) {
             chain.doFilter(request,response); return;
         }
         try {
@@ -34,7 +34,7 @@ public class UserBearerFilter extends OncePerRequestFilter {
             if(header==null || !header.startsWith("Bearer ")) throw new BusinessException(ErrorCode.UNAUTHORIZED);
             SysUserPO user=authentication.authenticate(header.substring(7).trim());
             if(user.isMustChangePassword() && !PASSWORD_ROUTES.contains(path)) throw new BusinessException(ErrorCode.PASSWORD_CHANGE_REQUIRED);
-            UserPrincipal principal=new UserPrincipal(user.getId(),user.getUsername(),user.getDisplayName());
+            UserPrincipal principal=new UserPrincipal(user.getId(),user.getEmail(),user.getDisplayName());
             var authorities=authorization.permissions(user.getId()).stream().map(SimpleGrantedAuthority::new).toList();
             SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(principal,null,authorities));
             UserContext.set(principal);
@@ -49,4 +49,3 @@ public class UserBearerFilter extends OncePerRequestFilter {
         finally { UserContext.clear(); SecurityContextHolder.clearContext(); }
     }
 }
-

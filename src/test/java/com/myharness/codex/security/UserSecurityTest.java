@@ -31,10 +31,10 @@ class UserSecurityTest {
     @Autowired com.myharness.codex.service.McpConfigurationService mcp;
     MockMvc mvc;SysUserPO user;String token;
     @BeforeEach void setup(){
-        reset(users,rbac,experts,mcp);user=new SysUserPO();user.setId(3L);user.setUsername("normal");user.setDisplayName("Normal");user.setStatus("ENABLED");
+        reset(users,rbac,experts,mcp);user=new SysUserPO();user.setId(3L);user.setEmail("normal@example.test");user.setDisplayName("Normal");user.setStatus("ENABLED");user.setPasswordHash("test-hash");user.setActivatedAt(java.time.LocalDateTime.of(2026,9,10,0,0));user.setEmailVerifiedAt(user.getActivatedAt());
         when(users.selectById(3L)).thenReturn(user);
         when(rbac.permissions(3L)).thenReturn(List.of("workspace:use","project:read"));
-        token=jwt.createToken(3L,"normal",0);
+        token=jwt.createToken(3L,0);
         mvc=MockMvcBuilders.webAppContextSetup(context).addFilters(context.getBean(FilterChainProxy.class)).build();
     }
     @Test void normalUserCanEnterWorkspaceButNotManagement() throws Exception {
@@ -102,6 +102,23 @@ class UserSecurityTest {
         user.setTokenVersion(0);user.setStatus("DISABLED");
         mvc.perform(get("/api/v1/projects").servletPath("/api/v1/projects").header("Authorization","Bearer "+token)).andExpect(status().isUnauthorized());
     }
+    @Test void publicAccountFlowsIgnoreStaleBearerButOtherAuthRoutesStayProtected() throws Exception {
+        for (String path : PublicAuthEndpoints.postPaths()) {
+            mvc.perform(post(path).servletPath(path)).andExpect(status().isOk());
+            mvc.perform(post(path).servletPath(path).header("Authorization", "Bearer expired-token"))
+                    .andExpect(status().isOk());
+            mvc.perform(get(path).servletPath(path)).andExpect(status().isUnauthorized());
+        }
+        for (String path : List.of("/api/v1/auth/profile", "/api/v1/auth/logout", "/api/v1/auth/change-password",
+                "/api/v1/auth/socket-ticket", "/api/v1/auth/activation/unknown")) {
+            mvc.perform(post(path).servletPath(path)).andExpect(status().isUnauthorized());
+        }
+    }
+    @Test void pendingAccountCannotUsePreviouslySignedToken() throws Exception {
+        user.setActivatedAt(null);
+        mvc.perform(get("/api/v1/projects").servletPath("/api/v1/projects").header("Authorization", "Bearer " + token))
+                .andExpect(status().isUnauthorized());
+    }
     @Test void initialPasswordOnlyAllowsAccountEndpoints() throws Exception {
         user.setMustChangePassword(true);
         mvc.perform(get("/api/v1/projects").servletPath("/api/v1/projects").header("Authorization","Bearer "+token))
@@ -133,6 +150,10 @@ class UserSecurityTest {
         @Bean com.myharness.codex.controller.McpConfigurationController mcpController(com.myharness.codex.service.McpConfigurationService mcp){return new com.myharness.codex.controller.McpConfigurationController(mcp);}
     }
     @RestController static class Endpoints {
+        @org.springframework.web.bind.annotation.PostMapping({"/api/v1/auth/login", "/api/v1/auth/activation/validate",
+                "/api/v1/auth/activate", "/api/v1/auth/activation/resend", "/api/v1/auth/password-reset/code",
+                "/api/v1/auth/password-reset"})
+        String publicPost(){return "ok";}
         @GetMapping({"/api/v1/projects","/api/v1/users","/api/v1/devices","/api/v1/skills","/api/v1/skill-deployments","/api/v1/auth/profile"})
         String get(){return "ok";}
     }

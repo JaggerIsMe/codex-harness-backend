@@ -41,10 +41,10 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public LoginVO login(LoginDTO dto) {
-        String username = dto.getUsername().trim();
-        limiter.attempt(username.toLowerCase(java.util.Locale.ROOT));
-        SysUserPO user = sysUserMapper.selectByUsername(username);
-        if (user == null || !passwordEncoder.matches(dto.getPassword(), user.getPasswordHash())) {
+        String email = com.myharness.codex.security.LoginEmail.normalize(dto.getEmail());
+        limiter.attempt(email.toLowerCase(java.util.Locale.ROOT));
+        SysUserPO user = sysUserMapper.selectByEmail(email);
+        if (user == null || !user.isActivated() || !passwordEncoder.matches(dto.getPassword(), user.getPasswordHash())) {
             throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
         }
         if (!UserStatus.ENABLED.name().equals(user.getStatus())) {
@@ -52,9 +52,9 @@ public class AuthServiceImpl implements AuthService {
         }
 
         sysUserMapper.updateLastLoginAt(user.getId(), LocalDateTime.now(ZoneOffset.UTC));
-        limiter.success(username.toLowerCase(java.util.Locale.ROOT));
+        limiter.success(email.toLowerCase(java.util.Locale.ROOT));
         UserProfileVO profile = toProfile(user);
-        String accessToken = jwtTokenService.createToken(user.getId(), user.getUsername(),user.getTokenVersion());
+        String accessToken = jwtTokenService.createToken(user.getId(), user.getTokenVersion());
         return new LoginVO(accessToken, jwtTokenService.getExpiresInSeconds(), profile);
     }
 
@@ -65,7 +65,8 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private UserProfileVO toProfile(SysUserPO user) {
-        return new UserProfileVO(user.getId(), user.getUsername(), user.getDisplayName())
+        return new UserProfileVO(user.getId(), user.getEmail(), user.getDisplayName())
+                .withActivated(user.isActivated())
                 .withAccess(authorization.roles(user.getId()),authorization.permissions(user.getId()),user.isMustChangePassword());
     }
 }

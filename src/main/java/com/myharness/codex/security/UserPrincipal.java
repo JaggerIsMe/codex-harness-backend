@@ -3,12 +3,12 @@ package com.myharness.codex.security;
 public class UserPrincipal {
 
     private final Long id;
-    private final String username;
+    private final String email;
     private final String displayName;
 
-    public UserPrincipal(Long id, String username, String displayName) {
+    public UserPrincipal(Long id, String email, String displayName) {
         this.id = id;
-        this.username = username;
+        this.email = email;
         this.displayName = displayName;
     }
 
@@ -16,8 +16,8 @@ public class UserPrincipal {
         return id;
     }
 
-    public String getUsername() {
-        return username;
+    public String getEmail() {
+        return email;
     }
 
     public String getDisplayName() {

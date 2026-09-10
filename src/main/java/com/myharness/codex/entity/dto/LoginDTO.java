@@ -5,20 +5,20 @@ import jakarta.validation.constraints.Size;
 
 public class LoginDTO {
 
-    @NotBlank(message = "请输入用户名")
-    @Size(max = 64, message = "用户名长度不能超过64个字符")
-    private String username;
+    @NotBlank(message = "请输入邮箱")
+    @Size(max = 254, message = "邮箱长度不能超过254个字符")
+    private String email;
 
     @NotBlank(message = "请输入密码")
     @Size(max = 128, message = "密码长度不能超过128个字符")
     private String password;
 
-    public String getUsername() {
-        return username;
+    public String getEmail() {
+        return email;
     }
 
-    public void setUsername(String username) {
-        this.username = username;
+    public void setEmail(String email) {
+        this.email = email;
     }
 
     public String getPassword() {

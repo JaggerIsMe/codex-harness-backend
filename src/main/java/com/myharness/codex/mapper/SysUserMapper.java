@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
 
 public interface SysUserMapper {
 
-    SysUserPO selectByUsername(@Param("username") String username);
+    SysUserPO selectByEmail(@Param("email") String email);
 
     SysUserPO selectById(@Param("id") Long id);
 

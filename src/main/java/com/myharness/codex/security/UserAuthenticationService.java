@@ -15,7 +15,7 @@ public class UserAuthenticationService {
         var claims=jwt.parseClaims(token);
         SysUserPO user=users.selectById(Long.valueOf(claims.getSubject()));
         Number version=claims.get("version",Number.class);
-        if(user==null || !"ENABLED".equals(user.getStatus()) || version==null || version.longValue()!=user.getTokenVersion())
+        if(user==null || !user.isActivated() || !"ENABLED".equals(user.getStatus()) || version==null || version.longValue()!=user.getTokenVersion())
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
         return user;
     }

@@ -42,7 +42,7 @@ class FrameworkCompatibilityTest {
                             .hasSingleBean(Validator.class).hasSingleBean(StringRedisTemplate.class);
                     var configuration = context.getBean(SqlSessionFactory.class).getConfiguration();
                     assertThat(configuration.isMapUnderscoreToCamelCase()).isTrue();
-                    assertThat(configuration.hasStatement("com.myharness.codex.mapper.SysUserMapper.selectByUsername")).isTrue();
+                    assertThat(configuration.hasStatement("com.myharness.codex.mapper.SysUserMapper.selectByEmail")).isTrue();
                     assertThat(configuration.hasMapper(ConversationMapper.class)).isTrue();
                     assertThat(context.getEnvironment().getProperty("spring.redis.host")).isNull();
                     assertThat(context.getEnvironment().getProperty("spring.data.redis.host")).isNotBlank();

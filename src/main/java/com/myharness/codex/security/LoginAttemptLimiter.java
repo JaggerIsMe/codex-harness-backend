@@ -9,14 +9,14 @@ import java.util.Map;
 public class LoginAttemptLimiter {
     private record Window(long expires,int attempts) {}
     private final Map<String,Window> windows=new HashMap<>();
-    public synchronized void attempt(String username) {
+    public synchronized void attempt(String email) {
         long now=System.currentTimeMillis();
         windows.entrySet().removeIf(e->e.getValue().expires()<now);
-        Window previous=windows.get(username);
+        Window previous=windows.get(email);
         if(previous!=null && previous.attempts()>=10 || previous==null && windows.size()>=4096)
             throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
-        windows.put(username,new Window(previous==null ? now+900_000:previous.expires(),previous==null?1:previous.attempts()+1));
+        windows.put(email,new Window(previous==null ? now+900_000:previous.expires(),previous==null?1:previous.attempts()+1));
     }
-    public synchronized void success(String username) { windows.remove(username); }
+    public synchronized void success(String email) { windows.remove(email); }
 }
 

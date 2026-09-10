@@ -1,5 +1,5 @@
 -- My Harness For Codex V1 database schema.
--- Compatible with MySQL 5.7.19 and MySQL 8.x.
+-- MySQL 8.0.19+ (including the accompanying seed-rbac.sql).
 -- Application code must read/write DATETIME values as UTC.
 
 CREATE DATABASE IF NOT EXISTS `harness`
@@ -10,20 +10,82 @@ USE `harness`;
 
 CREATE TABLE IF NOT EXISTS `sys_user` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
-    `username` VARCHAR(64) NOT NULL COMMENT 'Login name',
-    `password_hash` VARCHAR(100) NOT NULL COMMENT 'BCrypt password hash',
+    `email` VARCHAR(254) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'Canonical login email',
+    `password_hash` VARCHAR(100) NULL COMMENT 'BCrypt password hash; NULL before activation',
     `token_version` BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    `must_change_password` BOOLEAN NOT NULL DEFAULT TRUE,
+    `must_change_password` BOOLEAN NOT NULL DEFAULT FALSE,
     `password_changed_at` DATETIME(3) NULL,
     `display_name` VARCHAR(128) NOT NULL COMMENT 'Display name',
+    `email_verified_at` DATETIME(3) NULL,
+    `activated_at` DATETIME(3) NULL,
     `status` VARCHAR(16) NOT NULL DEFAULT 'ENABLED' COMMENT 'ENABLED/DISABLED',
     `last_login_at` DATETIME(3) NULL COMMENT 'Last successful login time (UTC)',
     `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updated_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_sys_user_username` (`username`),
+    UNIQUE KEY `uk_sys_user_email` (`email`),
     KEY `idx_sys_user_status` (`status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Administrator accounts';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Email-based user accounts';
+
+-- One-time account credentials, consumed in the same transaction as account mutations.
+CREATE TABLE IF NOT EXISTS account_email_challenge (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    user_id BIGINT UNSIGNED NOT NULL,
+    email VARCHAR(254) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    purpose VARCHAR(32) NOT NULL,
+    generation VARCHAR(36) NOT NULL,
+    digest CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    expires_at DATETIME(3) NOT NULL,
+    failed_attempts INT NOT NULL DEFAULT 0,
+    status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    used_at DATETIME(3) NULL,
+    revoked_at DATETIME(3) NULL,
+    PRIMARY KEY(id),
+    UNIQUE KEY uk_account_email_digest(digest),
+    UNIQUE KEY uk_account_email_generation(user_id,purpose,generation),
+    KEY idx_account_email_user(user_id,purpose,id),
+    KEY idx_account_email_expiry(status,expires_at),
+    CONSTRAINT fk_account_email_user FOREIGN KEY(user_id) REFERENCES sys_user(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Kept independently of account lifetime: deleting/disabling an account must not bootstrap it again.
+CREATE TABLE IF NOT EXISTS system_initialization (
+    initialization_key VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    user_id BIGINT UNSIGNED NOT NULL,
+    email VARCHAR(254) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    completed_at DATETIME(3) NULL,
+    PRIMARY KEY(initialization_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Only encrypted challenge material is stored; completed tasks retain non-secret metadata.
+CREATE TABLE IF NOT EXISTS mail_delivery_task (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    user_id BIGINT UNSIGNED NOT NULL,
+    challenge_id BIGINT UNSIGNED NULL,
+    template VARCHAR(32) NOT NULL,
+    recipient VARCHAR(254) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    encrypted_payload MEDIUMTEXT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'PENDING',
+    attempts INT NOT NULL DEFAULT 0,
+    next_attempt_at DATETIME(3) NOT NULL,
+    lease_until DATETIME(3) NULL,
+    lease_token VARCHAR(36) NULL,
+    error_code VARCHAR(64) NULL,
+    accepted_at DATETIME(3) NULL,
+    expires_at DATETIME(3) NOT NULL,
+    idempotency_key VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY(id),
+    UNIQUE KEY uk_mail_delivery_event(idempotency_key),
+    KEY idx_mail_delivery_due(status,next_attempt_at),
+    KEY idx_mail_delivery_lease(status,lease_until),
+    KEY idx_mail_delivery_user(user_id,template,id),
+    KEY idx_mail_delivery_challenge(challenge_id),
+    KEY idx_mail_delivery_expiry(expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `agent_enrollment` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
@@ -438,7 +500,6 @@ CREATE TABLE expert (
  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
  name VARCHAR(128) NOT NULL, description VARCHAR(2000) NOT NULL DEFAULT '',
  system_prompt MEDIUMTEXT NOT NULL, skill_version_ids TEXT NOT NULL, mcp_version_ids TEXT NOT NULL,
- compatible_upgrade TINYINT NOT NULL DEFAULT 0,
  status VARCHAR(16) NOT NULL DEFAULT 'DRAFT', published_version_id BIGINT UNSIGNED NULL,
  revision BIGINT NOT NULL DEFAULT 0, created_by BIGINT UNSIGNED NOT NULL,
  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -449,6 +510,7 @@ CREATE TABLE expert_version (
  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, expert_id BIGINT UNSIGNED NOT NULL,
  version_no BIGINT NOT NULL, name VARCHAR(128) NOT NULL, description VARCHAR(2000) NOT NULL,
  system_prompt MEDIUMTEXT NOT NULL, skill_version_ids TEXT NOT NULL, mcp_version_ids TEXT NOT NULL,
+ compatible_upgrade TINYINT NOT NULL DEFAULT 0,
  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
  UNIQUE KEY uk_expert_version(expert_id,version_no),
  CONSTRAINT fk_expert_version FOREIGN KEY(expert_id) REFERENCES expert(id)

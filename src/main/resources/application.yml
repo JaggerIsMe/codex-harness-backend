@@ -2,6 +2,25 @@ server:
   port: 9010
 
 spring:
+  # 账号邮件：事务入队，后台投递；启用时校验 SMTP、站点地址和独立密钥。
+  mail:
+    host: smtp.exmail.qq.com
+    port: 465
+    username: rpa@vantrue.net
+    password: n7DaJxNUZ7FGpT4q
+    protocol: smtp
+    default-encoding: UTF-8
+    properties:
+      "[mail.smtp.auth]": true
+      # 默认使用 587 + STARTTLS；使用 465 时启用 SSL 并关闭下面两个 STARTTLS 配置。
+      "[mail.smtp.ssl.enable]": true
+      "[mail.smtp.ssl.checkserveridentity]": true
+      "[mail.smtp.starttls.enable]": false
+      "[mail.smtp.starttls.required]": false
+      # 超时单位：毫秒。
+      "[mail.smtp.connectiontimeout]": 5000
+      "[mail.smtp.timeout]": 5000
+      "[mail.smtp.writetimeout]": 5000
   data:
     redis:
       host: localhost
@@ -29,13 +48,39 @@ mybatis:
     map-underscore-to-camel-case: true
 
 project:
-  folder: D:/a_Coder/WorkSpace/webSer/myApps/backend-harness
+  folder: D:/a_Coder/WorkSpace/webSer/myApps/harness-backend
 
 log:
   root:
     level: debug
 
 harness:
+  # 账号邮件：事务入队，后台投递；启用时校验 SMTP、站点地址和独立密钥。
+  mail:
+    enabled: true
+    from: rpa@vantrue.net
+    from-name: Vantrue Harness
+    # 用户访问前端的站点地址，用于生成激活链接；生产环境填写 HTTPS 地址。
+    public-base-url: http://localhost:8010
+    # 两个独立随机 32 字节的 Base64 密钥，所有实例保持一致并持久保存；不能使用 SMTP 密码或 JWT 密钥。
+    hmac-key: dnYWYi85B4CuW7qTYjuQRBgd/JRzr26hJInKN60PzFs=
+    encryption-key: zQVGtY2SyfOuqmvxZ4yiCOKq1pHKJHZHVrRQ3v6bRWg=
+    activation-ttl-hours: 24
+    reset-ttl-minutes: 10
+    resend-cooldown-seconds: 60
+    email-hourly-limit: 5
+    ip-send-hourly-limit: 30
+    max-verification-failures: 5
+    email-verify-hourly-limit: 20
+    ip-verify-hourly-limit: 100
+    max-delivery-attempts: 5
+    delivery-lease-seconds: 120
+    retry-base-seconds: 30
+    delivery-batch-size: 20
+    notification-ttl-hours: 72
+    metadata-retention-days: 30
+    delivery-poll-milliseconds: 5000
+    cleanup-poll-milliseconds: 60000
   workspace-files:
     storage-dir: ${project.folder}/workspace-file-storage
     max-file-bytes: 20971520
@@ -47,14 +92,14 @@ harness:
     checkpoint-ms: 5000
     event-retention-days: 7
   security:
-    jwt-secret: zse6a8suuxZfJP7FquSReLWlL9E8qxGQkk1ECZbRfEe39wThsbBLlGe4XNSkqqMkCQimn2g1fiap36vKmoQnog==
-    model-secret-key: ${HARNESS_MODEL_SECRET_KEY:}
+    jwt-secret: RcDzEgUftcD1n6LiBJsWxtoAgTQ+YK5VCQ189E/FpAE=
+    model-secret-key: tayfgtDT/ug755+MD4KYIXBu7/fXS3UoQTbogvBWWkg=
     jwt-expire-minutes: 120
   bootstrap-admin:
     enabled: true
-    username: admin
-    password: admin
-    display-name: 管理员
+    # 首次空库启动创建待激活管理员；永久初始化记录阻止重复创建或补权。
+    email: namedalice@163.com
+    display-name: Jagger
   agent:
     protocol-version: "1.0"
     enrollment-ttl-minutes: 10

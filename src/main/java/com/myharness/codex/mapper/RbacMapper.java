@@ -22,7 +22,7 @@ public interface RbacMapper {
     Long lockAdministratorRole();
 
     @Select("SELECT COUNT(*) FROM sys_user u JOIN sys_user_role ur ON ur.user_id=u.id JOIN sys_role r ON r.id=ur.role_id " +
-            "WHERE u.status='ENABLED' AND r.role_code='SYS_ADMIN' AND r.status='ENABLED'")
+            "WHERE u.status='ENABLED' AND u.activated_at IS NOT NULL AND u.email_verified_at IS NOT NULL AND u.password_hash IS NOT NULL AND r.role_code='SYS_ADMIN' AND r.status='ENABLED'")
     int enabledAdministrators();
 
     @Delete("DELETE FROM sys_user_role WHERE user_id=#{userId}")
@@ -61,12 +61,16 @@ public interface RbacMapper {
             "FROM agent_device d JOIN user_device_assignment a ON a.device_id=d.id AND a.user_id=#{userId} AND a.status='ENABLED' ORDER BY d.device_name,d.id")
     List<ExecutableDeviceVO> executableDevices(Long userId);
 
-    @Select("<script>SELECT * FROM sys_user WHERE (#{keyword}='' OR username LIKE CONCAT('%',#{keyword},'%') OR display_name LIKE CONCAT('%',#{keyword},'%')) " +
-            "<if test='status != null and status != &quot;&quot;'>AND status=#{status}</if> ORDER BY id DESC LIMIT #{limit} OFFSET #{offset}</script>")
+    String USER_FILTER = " WHERE (#{keyword}='' OR email LIKE CONCAT('%',LOWER(#{keyword}),'%') OR display_name LIKE CONCAT('%',#{keyword},'%')) "
+            + "AND (#{status} IS NULL OR #{status}='' "
+            + "OR (#{status}='DISABLED' AND status='DISABLED') "
+            + "OR (#{status}='ENABLED' AND status='ENABLED' AND activated_at IS NOT NULL AND email_verified_at IS NOT NULL AND password_hash IS NOT NULL) "
+            + "OR (#{status}='PENDING' AND status='ENABLED' AND (activated_at IS NULL OR email_verified_at IS NULL OR password_hash IS NULL)))";
+
+    @Select("SELECT * FROM sys_user" + USER_FILTER + " ORDER BY id DESC LIMIT #{limit} OFFSET #{offset}")
     List<SysUserPO> users(@Param("keyword") String keyword,@Param("status") String status,@Param("limit") int limit,@Param("offset") int offset);
 
-    @Select("SELECT COUNT(*) FROM sys_user WHERE (#{keyword}='' OR username LIKE CONCAT('%',#{keyword},'%') OR display_name LIKE CONCAT('%',#{keyword},'%')) " +
-            "AND (#{status} IS NULL OR #{status}='' OR status=#{status})")
+    @Select("SELECT COUNT(*) FROM sys_user" + USER_FILTER)
     long countUsers(@Param("keyword") String keyword,@Param("status") String status);
 
     @Select("SELECT * FROM sys_user WHERE id=#{userId} FOR UPDATE")
@@ -86,4 +90,3 @@ public interface RbacMapper {
     int audit(@Param("operatorId") Long operatorId,@Param("action") String action,@Param("targetType") String targetType,
               @Param("targetId") String targetId,@Param("detail") String detail);
 }
-

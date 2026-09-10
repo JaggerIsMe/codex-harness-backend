@@ -63,7 +63,7 @@ class WorkspaceFileHttpSecurityTest {
         when(devices.selectByCode("device")).thenReturn(d);
         d.setWorkspaceFiles(true);when(devices.selectById(4L)).thenReturn(d);
         when(users.authenticate(anyString())).thenThrow(new BusinessException(ErrorCode.UNAUTHORIZED));
-        var u=new SysUserPO();u.setId(3L);u.setUsername("owner");doReturn(u).when(users).authenticate("user-token");
+        var u=new SysUserPO();u.setId(3L);u.setEmail("owner@example.test");doReturn(u).when(users).authenticate("user-token");
         when(access.permissions(3L)).thenReturn(List.of("workspace:use"));
         mvc=MockMvcBuilders.webAppContextSetup(context).addFilters(context.getBean(FilterChainProxy.class)).build();
     }

@@ -1,18 +1,14 @@
 -- MySQL 8.0.19+：harness 完整内置角色、权限和角色权限预置。
--- 前置条件：schema.sql 已创建 sys_role / sys_permission / sys_role_permission / sys_user / sys_user_role。
+-- 用途：清空业务数据后、启动 Server 前执行。
+-- 前置条件：sys_role / sys_permission / sys_role_permission 表及其唯一索引已存在。
 -- 可重复执行；通过角色码/权限码查找 ID，不依赖自增值，也不执行 TRUNCATE 或 ALTER。
 -- 补齐并启用 SYS_ADMIN、USER；补齐 20 项权限及 34 条内置角色权限关联。
--- 不删除自定义角色、权限及已有授权；不修改密码、账号状态、机器或专家授权。
+-- 只操作角色、权限及角色权限关联，不读取或创建用户，不依赖 username/email 字段。
+-- 不删除自定义角色、权限及已有授权；管理员账号由应用的初始化流程创建。
 -- 在同一连接中执行，遇错停止并 ROLLBACK；不要使用 mysql --force。
 
 USE `harness`;
 SET NAMES utf8mb4;
-
--- 可选：恢复一个明确选定、已存在且启用的管理员账号。
--- 默认 NULL 只初始化角色权限。需要恢复用户时，先查询下方候选，再填其确切 ID。
--- 当前本地预置账号为 admin（本次检查 ID=1）；不要据此为其他环境猜测管理员。
-SET @harness_rbac_admin_user_id = NULL;
-SELECT id, username, status FROM sys_user ORDER BY id;
 
 START TRANSACTION;
 
@@ -74,13 +70,6 @@ WHERE r.role_code = 'USER'
   )
 ON DUPLICATE KEY UPDATE permission_id = sys_role_permission.permission_id;
 
--- 只恢复显式指定的启用用户；NULL、不存在或禁用的用户均不会被授权。
-INSERT INTO sys_user_role(user_id, role_id)
-SELECT u.id, r.id FROM sys_user u CROSS JOIN sys_role r
-WHERE u.id = @harness_rbac_admin_user_id AND u.status = 'ENABLED'
-  AND r.role_code = 'SYS_ADMIN' AND r.status = 'ENABLED'
-ON DUPLICATE KEY UPDATE role_id = sys_user_role.role_id;
-
 COMMIT;
 
 -- 验收：干净数据库应为 SYS_ADMIN=20、USER=14；原有自定义授权也会显示。
@@ -94,9 +83,3 @@ FROM sys_role r JOIN sys_role_permission rp ON rp.role_id = r.id
 JOIN sys_permission p ON p.id = rp.permission_id
 WHERE r.role_code IN ('SYS_ADMIN', 'USER') ORDER BY r.role_code, p.permission_code;
 
--- 指定用户时应返回一行管理员绑定；无结果表示未恢复，需核对 ID 和账号状态。
-SELECT u.id, u.username, r.role_code FROM sys_user u
-JOIN sys_user_role ur ON ur.user_id = u.id JOIN sys_role r ON r.id = ur.role_id
-WHERE u.id = @harness_rbac_admin_user_id AND r.role_code = 'SYS_ADMIN';
-
-SET @harness_rbac_admin_user_id = NULL;

@@ -3,11 +3,14 @@ package com.myharness.codex.entity.vo;
 public class UserProfileVO {
 
     private final Long id;
-    private final String username;
+    private final String email;
     private final String displayName;
     private java.util.List<String> roles=java.util.List.of();
     private java.util.List<String> permissions=java.util.List.of();
     private boolean mustChangePassword;
+    private boolean activated;
+    public boolean isActivated() { return activated; }
+    public UserProfileVO withActivated(boolean value) { this.activated = value; return this; }
     public java.util.List<String> getRoles() { return roles; }
     public java.util.List<String> getPermissions() { return permissions; }
     public boolean isMustChangePassword() { return mustChangePassword; }
@@ -16,9 +19,9 @@ public class UserProfileVO {
         this.mustChangePassword=mustChange; return this;
     }
 
-    public UserProfileVO(Long id, String username, String displayName) {
+    public UserProfileVO(Long id, String email, String displayName) {
         this.id = id;
-        this.username = username;
+        this.email = email;
         this.displayName = displayName;
     }
 
@@ -26,8 +29,8 @@ public class UserProfileVO {
         return id;
     }
 
-    public String getUsername() {
-        return username;
+    public String getEmail() {
+        return email;
     }
 
     public String getDisplayName() {
