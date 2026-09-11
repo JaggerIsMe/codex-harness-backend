@@ -21,7 +21,6 @@ RENAME TABLE
     `newharness`.`conversation_message_attachment` TO `harness`.`conversation_message_attachment`,
     `newharness`.`conversation_turn` TO `harness`.`conversation_turn`,
     `newharness`.`device_model_assignment` TO `harness`.`device_model_assignment`,
-    `newharness`.`device_skill` TO `harness`.`device_skill`,
     `newharness`.`expert` TO `harness`.`expert`,
     `newharness`.`expert_version` TO `harness`.`expert_version`,
     `newharness`.`mcp_configuration` TO `harness`.`mcp_configuration`,

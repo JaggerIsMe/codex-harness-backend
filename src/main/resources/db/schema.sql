@@ -241,28 +241,7 @@ CREATE TABLE IF NOT EXISTS `skill_version` (
     CONSTRAINT `fk_skill_version_created_by` FOREIGN KEY (`created_by`) REFERENCES `sys_user` (`id`) ON UPDATE RESTRICT ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Immutable Skill versions';
 
-CREATE TABLE IF NOT EXISTS `device_skill` (
-    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
-    `device_id` BIGINT UNSIGNED NOT NULL COMMENT 'Target device',
-    `skill_version_id` BIGINT UNSIGNED NOT NULL COMMENT 'Installed Skill version',
-    `scope_type` VARCHAR(16) NOT NULL DEFAULT 'GLOBAL' COMMENT 'GLOBAL/PROJECT',
-    `project_id` BIGINT UNSIGNED NULL COMMENT 'Target project for PROJECT scope',
-    `scope_key` VARCHAR(80) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'GLOBAL' COMMENT 'Stable uniqueness key: GLOBAL or PROJECT:{id}',
-    `install_status` VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/INSTALLING/INSTALLED/REMOVING/FAILED/REMOVED',
-    `error_message` VARCHAR(2000) NULL COMMENT 'Last installation error without secrets',
-    `requested_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT 'Latest install request time (UTC)',
-    `installed_at` DATETIME(3) NULL COMMENT 'Successful install time (UTC)',
-    `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    `updated_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-    PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_device_skill_scope` (`device_id`, `skill_version_id`, `scope_key`),
-    KEY `idx_device_skill_device_status` (`device_id`, `install_status`),
-    KEY `idx_device_skill_version` (`skill_version_id`),
-    KEY `idx_device_skill_project_status` (`project_id`, `install_status`),
-    CONSTRAINT `fk_device_skill_device` FOREIGN KEY (`device_id`) REFERENCES `agent_device` (`id`) ON UPDATE RESTRICT ON DELETE RESTRICT,
-    CONSTRAINT `fk_device_skill_version` FOREIGN KEY (`skill_version_id`) REFERENCES `skill_version` (`id`) ON UPDATE RESTRICT ON DELETE RESTRICT,
-    CONSTRAINT `fk_device_skill_project` FOREIGN KEY (`project_id`) REFERENCES `codex_project` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Skill installation state per device';
+
 
 CREATE TABLE IF NOT EXISTS `conversation` (
   `expert_runtime_key` CHAR(64) NULL COMMENT '当前 Codex 线程的专家运行配置标识',
@@ -500,6 +479,7 @@ CREATE TABLE expert (
  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
  name VARCHAR(128) NOT NULL, description VARCHAR(2000) NOT NULL DEFAULT '',
  system_prompt MEDIUMTEXT NOT NULL, skill_version_ids TEXT NOT NULL, mcp_version_ids TEXT NOT NULL,
+ draft_changed TINYINT NOT NULL DEFAULT 1,
  status VARCHAR(16) NOT NULL DEFAULT 'DRAFT', published_version_id BIGINT UNSIGNED NULL,
  revision BIGINT NOT NULL DEFAULT 0, created_by BIGINT UNSIGNED NOT NULL,
  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -687,3 +667,19 @@ CREATE TABLE IF NOT EXISTS skill_import_record (
     KEY idx_skill_import_owner (owner_id,kind),
     KEY idx_skill_import_expiry (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Skill assignment changes expert drafts; there is no device installation registry.
+CREATE TABLE skill_expert_assignment_batch (
+ id VARCHAR(36) PRIMARY KEY, owner_id BIGINT UNSIGNED NOT NULL,
+ skill_id BIGINT UNSIGNED NOT NULL, version_id BIGINT UNSIGNED NOT NULL,
+ payload JSON NOT NULL, started TINYINT NOT NULL DEFAULT 0,
+ expires_at DATETIME(3) NOT NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+ KEY idx_skill_assignment_owner(owner_id,created_at),
+ FOREIGN KEY(owner_id) REFERENCES sys_user(id), FOREIGN KEY(skill_id) REFERENCES skill(id),
+ FOREIGN KEY(version_id) REFERENCES skill_version(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE skill_expert_assignment_item (
+ batch_id VARCHAR(36) NOT NULL, expert_id BIGINT UNSIGNED NOT NULL, payload JSON NOT NULL,
+ PRIMARY KEY(batch_id,expert_id), FOREIGN KEY(batch_id) REFERENCES skill_expert_assignment_batch(id) ON DELETE CASCADE,
+ FOREIGN KEY(expert_id) REFERENCES expert(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

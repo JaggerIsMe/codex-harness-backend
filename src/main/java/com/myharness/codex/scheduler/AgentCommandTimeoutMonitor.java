@@ -2,7 +2,6 @@ package com.myharness.codex.scheduler;
 
 import com.myharness.codex.config.AgentProperties;
 import com.myharness.codex.mapper.ConversationMapper;
-import com.myharness.codex.mapper.SkillMapper;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,13 +18,11 @@ public class AgentCommandTimeoutMonitor {
     }
     private final AgentProperties properties;
     private final ConversationMapper conversations;
-    private final SkillMapper skills;
     private final com.myharness.codex.mapper.AgentDeviceMapper devices;
 
-    public AgentCommandTimeoutMonitor(AgentProperties properties, ConversationMapper conversations, SkillMapper skills,com.myharness.codex.mapper.AgentDeviceMapper devices) {
+    public AgentCommandTimeoutMonitor(AgentProperties properties, ConversationMapper conversations,com.myharness.codex.mapper.AgentDeviceMapper devices) {
         this.properties = properties;
         this.conversations = conversations;
-        this.skills = skills;
         this.devices=devices;
     }
 
@@ -37,7 +34,6 @@ public class AgentCommandTimeoutMonitor {
         var changed=projects==null ? java.util.List.<com.myharness.codex.entity.po.ProjectPO>of() : projects.timedOutTurnProjects(deadline,now);
         conversations.failTimedOutThreadStarts(deadline);
         conversations.failTimedOutTurnStarts(deadline, now);
-        skills.failTimedOutDeployments(deadline);
         devices.failTimedOutWorkspaces(properties.getCommandTimeoutSeconds());
         if(workspaceFiles!=null && !changed.isEmpty()) {
             Runnable refresh=() -> changed.forEach(p -> workspaceFiles.refreshProject(p.getId(),p.getUserId()));

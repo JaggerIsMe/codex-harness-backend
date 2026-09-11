@@ -134,8 +134,6 @@ mvn spring-boot:run
 - `POST /api/v1/projects/{projectId}/conversations/{id}/turns`
 - `POST /api/v1/projects/{projectId}/conversations/{conversationId}/turns/{turnId}/interrupt`
 - `POST /api/v1/approvals/{id}/decision`
-- `POST /api/v1/skill-deployments/devices/{deviceId}/versions/{versionId}`
-- `POST /api/v1/skill-deployments/{id}/remove`
 
 一个 `agent_workspace` 只能绑定一个 `codex_project`。会话通过数据库复合外键同时锁定项目、用户、设备和工作区；项目会话接口检查当前用户、归属和机器授权。Agent 连接 `/ws/agent`，浏览器先以 JWT 调用 `POST /api/v1/auth/socket-ticket`，再连接 `/ws/client?ticket=<一次性票据>`；不再接受长期 JWT 查询参数。生产环境应通过同源反向代理提供 HTTPS/WSS。用户管理、新接口和迁移说明见 [用户与机器授权](../../docs/user-device-rbac.md)。
 
@@ -168,3 +166,5 @@ mvn '-Dmysql.integration=true' '-Dtest=MysqlCompatibilityTest' test
 后端 `mvn -Dredis.integration=true -Dmysql.isolated.integration=true verify` 已通过：311 项测试中 293 项成功，18 项历史业务数据库 opt-in 测试跳过，0 失败、0 错误；可执行 JAR 已生成。覆盖独立 MySQL 的全新 schema 安装、邀请/激活/找回事务、并发单次消费、失败计数、初始化幂等与邮件租约测试，以及独立 Redis 的限流测试；真实 Spring 调度测试确认慢 SMTP 不阻塞普通任务。需连接既有业务 MySQL 的历史 opt-in 测试未启用。未启动连接业务库的 Server，未执行实际清库或 SMTP 发信。
 
 前端 `npm test` 的 8 项测试与 `npm run test:unit` 的 40 个文件、265 项测试通过，`npm run build`（含类型检查）通过；使用本机 Chrome 的 10 项模拟 API E2E 覆盖激活、找回、邮件重发及邮箱登录。浏览器测试覆盖交互与协议，真实 SMTP/收件效果仍按部署流程验收。
+
+Skill 分配使用 `/api/v1/skill-expert-assignments`，更新专家草稿。详见 [方案](../../docs/skill-expert-assignment.md)。

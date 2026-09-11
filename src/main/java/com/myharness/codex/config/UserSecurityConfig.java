@@ -29,7 +29,7 @@ public class UserSecurityConfig {
                 .requestMatchers("/api/v1/devices/available").hasAuthority("workspace:use")
                 .requestMatchers("/api/v1/admin/model-configurations/**","/api/v1/devices/*/model-assignment").hasAuthority("model:manage")
                 .requestMatchers("/api/v1/devices/**").hasAuthority("device:manage")
-                .requestMatchers("/api/v1/skills/**","/api/v1/skill-deployments/**").hasAuthority("skill:manage")
+                .requestMatchers("/api/v1/skills/**","/api/v1/skill-expert-assignments/**").hasAuthority("skill:manage")
                 .requestMatchers(HttpMethod.GET,"/api/v1/admin/mcp-configurations/selectable-versions").hasAuthority("expert:manage")
                 .requestMatchers("/api/v1/admin/mcp-configurations/**").hasAuthority("mcp:manage")
                 .requestMatchers("/api/v1/admin/experts/**").hasAuthority("expert:manage")

@@ -160,12 +160,6 @@ class ExpertServiceTest {
         assertEquals(List.of(51L),service.freeze(other,4L).getSkills().stream().map(ExpertRuntimeSkillDTO::getVersionId).toList());
     }
 
-    @Test void projectInstalledSkillConflictBlocksBinding() {
-        skill(50L,7L);skill(51L,7L);versions.get(100L).setSkillVersionIds("[50]");var installed=skills.selectVersion(51L);when(mapper.installedSkills(1L)).thenReturn(List.of(installed));
-        var input=new ExpertBindingDTO();input.setExpertVersionId(100L);input.setProjectRevision(4L);
-        assertThrows(BusinessException.class,()->service.bind(1L,input,2L));verify(mapper,never()).bind(any());
-    }
-
     @Test void knowledgeBindingsAreReservedAndCannotBeConfigured() {
         var input=new ExpertDraftDTO();input.setName("A");input.setSystemPrompt("B");input.setKnowledgeBindings(List.of("knowledge"));
         assertThrows(BusinessException.class,()->service.save(null,input,2L));verify(mapper,never()).insert(any());
@@ -185,15 +179,15 @@ class ExpertServiceTest {
         assertEquals(64,frozen.getRuntimeKey().length());
     }
 
-    @Test void editingPublishedExpertReturnsItToDraft() {
+    @Test void editingPublishedExpertPreservesAvailability() {
         var expert=new ExpertPO();expert.setId(10L);expert.setName("Java");expert.setSystemPrompt("old");expert.setSkillVersionIds("[]");expert.setRevision(3L);expert.setStatus("PUBLISHED");
         when(mapper.lock(10L)).thenReturn(expert);when(mapper.get(10L)).thenReturn(expert);when(mapper.boundProjects(10L)).thenReturn(List.of(1L));
         var input=new ExpertDraftDTO();input.setName("Java v2 draft");input.setSystemPrompt("new");input.setRevision(3L);
 
         var saved=service.save(10L,input,2L);
 
-        assertEquals("DRAFT",saved.status());
-        verify(mapper).draft(expert);verify(mapper).lockProject(1L);verify(mapper).bumpProject(1L);
+        assertEquals("PUBLISHED",saved.status());
+        verify(mapper).draft(expert);verify(mapper,never()).lockProject(any());verify(mapper,never()).bumpProject(any());
     }
 
     @Test void expertCannotSelectTwoVersionsOfTheSameSkill() {

@@ -50,7 +50,7 @@ class UserSecurityTest {
     }
     @Test void normalUserCanEnterWorkspaceButNotManagement() throws Exception {
         mvc.perform(get("/api/v1/projects").servletPath("/api/v1/projects").header("Authorization","Bearer "+token)).andExpect(status().isOk());
-        for(String path:List.of("/api/v1/users","/api/v1/devices","/api/v1/skills","/api/v1/skill-deployments","/api/v1/admin/mcp-configurations"))
+        for(String path:List.of("/api/v1/users","/api/v1/devices","/api/v1/skills","/api/v1/skill-expert-assignments","/api/v1/admin/mcp-configurations"))
             mvc.perform(get(path).servletPath(path).header("Authorization","Bearer "+token)).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value(403));
     }
     @Test void mcpManagerCanManageAndExpertManagerCanOnlyReadSelector() throws Exception {
@@ -238,7 +238,7 @@ class UserSecurityTest {
                 "/api/v1/auth/activate", "/api/v1/auth/activation/resend", "/api/v1/auth/password-reset/code",
                 "/api/v1/auth/password-reset"})
         String publicPost(){return "ok";}
-        @GetMapping({"/api/v1/projects","/api/v1/users","/api/v1/devices","/api/v1/skills","/api/v1/skill-deployments","/api/v1/auth/profile"})
+        @GetMapping({"/api/v1/projects","/api/v1/users","/api/v1/devices","/api/v1/skills","/api/v1/skill-expert-assignments","/api/v1/auth/profile"})
         String get(){return "ok";}
     }
 }

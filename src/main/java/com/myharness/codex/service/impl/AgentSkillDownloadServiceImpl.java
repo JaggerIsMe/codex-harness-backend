@@ -29,8 +29,8 @@ public class AgentSkillDownloadServiceImpl implements AgentSkillDownloadService 
     @Override public SkillFileVO download(Long versionId,String deviceCode,String authorization) throws IOException {
         AgentDevicePO device=authenticationService.authenticate(deviceCode,authorization);
         SkillDownloadPO download=skillMapper.selectDownload(versionId,device.getId());
-        if (download==null || "DISABLED".equals(download.getVersionStatus()) || "REMOVED".equals(download.getInstallStatus()))
-            throw new BusinessException(ErrorCode.NOT_FOUND,"Skill 版本不存在或未下发到该设备");
+        if (download==null || "DISABLED".equals(download.getVersionStatus()))
+            throw new BusinessException(ErrorCode.NOT_FOUND,"Skill 版本不可用或设备无权读取专家依赖");
         Path root=Paths.get(properties.getSkillStorageDir()).toAbsolutePath().normalize();
         Path file=Paths.get(download.getStoragePath()).toAbsolutePath().normalize();
         if (!file.startsWith(root) || !Files.isRegularFile(file) || Files.size(file)!=download.getFileSize())

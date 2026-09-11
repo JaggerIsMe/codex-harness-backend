@@ -121,7 +121,7 @@ class ExpertPublishMysqlTest {
                                          "systemPrompt":"Help with fixture tasks and concise explanations.","skillVersionIds":[],
                                          "mcpBindings":[],"knowledgeBindings":[],"revision":%d}
                                         """.formatted(publishedRevision)))
-                        .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("DRAFT")).andReturn();
+                        .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("PUBLISHED")).andExpect(jsonPath("$.data.draftChanged").value(true)).andReturn();
                 long secondDraftRevision = json.readTree(edited.getResponse().getContentAsString()).path("data").path("revision").asLong();
                 assertThat(secondDraftRevision).isEqualTo(publishedRevision + 1);
                 var secondPublished = mvc.perform(post("/api/v1/admin/experts/{id}/publish", expertId).contentType(MediaType.APPLICATION_JSON)

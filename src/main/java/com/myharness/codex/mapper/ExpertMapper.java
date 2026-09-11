@@ -6,7 +6,6 @@ import org.apache.ibatis.annotations.*;
 import java.util.List;
 
 public interface ExpertMapper {
-    @Select("SELECT COUNT(*) FROM device_skill WHERE project_id=#{id} AND install_status IN ('INSTALLING','REMOVING')") int pendingSkillChanges(Long id);
     @Select("SELECT project_id FROM project_expert_binding WHERE expert_id=#{id} ORDER BY project_id") List<Long> boundProjects(Long id);
     @Select("SELECT DISTINCT sv.id,sv.skill_id,sv.version,sv.status FROM project_expert_binding b JOIN expert_version v ON v.id=b.expert_version_id JOIN expert e ON e.id=b.expert_id JOIN skill_version sv ON JSON_CONTAINS(v.skill_version_ids,CAST(sv.id AS JSON),'$') WHERE b.project_id=#{id} AND e.status='PUBLISHED'") List<SkillVersionPO> requiredSkills(Long id);
     @Select("SELECT * FROM expert WHERE (#{keyword}='' OR name LIKE CONCAT('%',#{keyword},'%') OR description LIKE CONCAT('%',#{keyword},'%')) ORDER BY id DESC LIMIT 200")
@@ -17,12 +16,12 @@ public interface ExpertMapper {
     @Select("SELECT * FROM expert WHERE id=#{id} FOR UPDATE") ExpertPO lock(Long id);
     @Insert("INSERT INTO expert(name,description,system_prompt,skill_version_ids,mcp_version_ids,created_by) VALUES(#{name},#{description},#{systemPrompt},#{skillVersionIds},#{mcpVersionIds},#{createdBy})")
     @Options(useGeneratedKeys=true,keyProperty="id") int insert(ExpertPO value);
-    @Update("UPDATE expert SET name=#{name},description=#{description},system_prompt=#{systemPrompt},skill_version_ids=#{skillVersionIds},mcp_version_ids=#{mcpVersionIds},status='DRAFT',revision=revision+1 WHERE id=#{id}")
+    @Update("UPDATE expert SET name=#{name},description=#{description},system_prompt=#{systemPrompt},skill_version_ids=#{skillVersionIds},mcp_version_ids=#{mcpVersionIds},draft_changed=1,revision=revision+1 WHERE id=#{id}")
     int draft(ExpertPO value);
     @Select("SELECT COALESCE(MAX(version_no),0)+1 FROM expert_version WHERE expert_id=#{id}") long nextVersion(Long id);
     @Insert("INSERT INTO expert_version(expert_id,version_no,name,description,system_prompt,skill_version_ids,mcp_version_ids,compatible_upgrade) VALUES(#{expertId},#{versionNo},#{name},#{description},#{systemPrompt},#{skillVersionIds},#{mcpVersionIds},#{compatibleUpgrade})")
     @Options(useGeneratedKeys=true,keyProperty="id") int publish(ExpertVersionPO value);
-    @Update("UPDATE expert SET published_version_id=#{versionId},status='PUBLISHED',revision=revision+1 WHERE id=#{id}")
+    @Update("UPDATE expert SET published_version_id=#{versionId},status='PUBLISHED',draft_changed=0,revision=revision+1 WHERE id=#{id}")
     int published(@Param("id") Long id,@Param("versionId") Long versionId);
     @Update("UPDATE expert SET status=#{status},revision=revision+1 WHERE id=#{id}")
     int status(@Param("id") Long id,@Param("status") String status);
@@ -47,8 +46,5 @@ public interface ExpertMapper {
                                        @Param("targetVersionId") Long targetVersionId);
     @Delete("DELETE FROM project_expert_binding WHERE project_id=#{projectId} AND expert_id=#{expertId}") int unbind(@Param("projectId") Long projectId,@Param("expertId") Long expertId);
     @Select("SELECT COUNT(*) FROM conversation_turn t JOIN conversation c ON c.id=t.conversation_id WHERE c.project_id=#{id} AND t.status IN ('CREATED','RUNNING','WAITING_APPROVAL')") int activeTurns(Long id);
-    @Select("SELECT sv.id,sv.skill_id,sv.version,sv.status FROM device_skill ds JOIN skill_version sv ON sv.id=ds.skill_version_id WHERE ds.project_id=#{id} AND ds.install_status IN ('INSTALLING','INSTALLED','REMOVING')") List<SkillVersionPO> installedSkills(Long id);
     @Select("SELECT t.id turn_id,t.expert_version_id,t.expert_name FROM conversation_turn t WHERE t.conversation_id=#{id} ORDER BY t.id") List<TurnExpertVO> turnExperts(Long id);
-    @Select("SELECT COUNT(*) FROM project_expert_binding b JOIN codex_project p ON p.id=b.project_id JOIN user_expert_assignment a ON a.user_id=p.user_id AND a.expert_id=b.expert_id AND a.status='ENABLED' JOIN expert_version v ON v.expert_id=b.expert_id JOIN expert e ON e.id=b.expert_id WHERE p.device_id=#{deviceId} AND e.status='PUBLISHED' AND JSON_CONTAINS(v.skill_version_ids,CAST(#{versionId} AS JSON),'$')")
-    int downloadAllowed(@Param("deviceId") Long deviceId,@Param("versionId") String versionId);
 }

@@ -1,7 +1,6 @@
 package com.myharness.codex.mapper;
 
 import com.myharness.codex.entity.po.SkillDownloadPO;
-import com.myharness.codex.entity.po.SkillDeploymentPO;
 import com.myharness.codex.entity.po.SkillPO;
 import com.myharness.codex.entity.po.SkillVersionPO;
 import org.apache.ibatis.annotations.Insert;
@@ -10,7 +9,6 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
 public interface SkillMapper {
@@ -59,61 +57,16 @@ public interface SkillMapper {
     @Update("UPDATE skill_version SET status='DISABLED' WHERE skill_id=#{skillId} AND status='ACTIVE'")
     int disableActiveVersions(@Param("skillId") Long skillId);
 
-    @Select("SELECT NULL id,#{deviceId} device_id,sv.id skill_version_id,sv.skill_id,s.skill_name,sv.version,sv.sha256," +
-            "#{scopeType} scope_type,#{projectId} project_id,#{scopeKey} scope_key,NULL install_status,d.device_code,d.device_name " +
-            "FROM skill_version sv JOIN skill s ON s.id=sv.skill_id " +
-            "JOIN agent_device d ON d.id=#{deviceId} WHERE sv.id=#{versionId} AND sv.status='ACTIVE' " +
-            "AND s.status='ENABLED' AND d.status<>'DISABLED'")
-    SkillDeploymentPO selectDeployable(@Param("deviceId") Long deviceId,@Param("versionId") Long versionId,
-                                       @Param("scopeType") String scopeType,@Param("projectId") Long projectId,
-                                       @Param("scopeKey") String scopeKey);
-
-    @Insert("INSERT INTO device_skill(device_id,skill_version_id,scope_type,project_id,scope_key,install_status,requested_at) " +
-            "VALUES(#{deviceId},#{skillVersionId},#{scopeType},#{projectId},#{scopeKey},'INSTALLING',NOW(3)) " +
-            "ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id),install_status='INSTALLING',error_message=NULL,requested_at=NOW(3)")
-    @Options(useGeneratedKeys=true,keyProperty="id")
-    int upsertDeployment(SkillDeploymentPO deployment);
-
-    @Select("SELECT ds.id,ds.device_id,ds.skill_version_id,sv.skill_id,s.skill_name,sv.version,sv.sha256,ds.scope_type,ds.project_id," +
-            "p.project_name,w.workspace_name,ds.install_status,ds.error_message,ds.requested_at,ds.installed_at,ds.updated_at,d.device_code,d.device_name " +
-            "FROM device_skill ds JOIN skill_version sv ON sv.id=ds.skill_version_id JOIN skill s ON s.id=sv.skill_id " +
-            "JOIN agent_device d ON d.id=ds.device_id LEFT JOIN codex_project p ON p.id=ds.project_id " +
-            "LEFT JOIN agent_workspace w ON w.id=p.workspace_id WHERE ds.id=#{id}")
-    SkillDeploymentPO selectDeployment(@Param("id") Long id);
-
-    @Select("SELECT ds.id,ds.device_id,ds.skill_version_id,sv.skill_id,s.skill_name,sv.version,sv.sha256,ds.scope_type,ds.project_id," +
-            "p.project_name,w.workspace_name,ds.install_status,ds.error_message,ds.requested_at,ds.installed_at,ds.updated_at,d.device_code,d.device_name " +
-            "FROM device_skill ds JOIN skill_version sv ON sv.id=ds.skill_version_id JOIN skill s ON s.id=sv.skill_id " +
-            "JOIN agent_device d ON d.id=ds.device_id LEFT JOIN codex_project p ON p.id=ds.project_id " +
-            "LEFT JOIN agent_workspace w ON w.id=p.workspace_id " +
-            "WHERE (#{keyword} IS NULL OR #{keyword}='' OR s.skill_name LIKE CONCAT('%',#{keyword},'%') " +
-            "OR d.device_name LIKE CONCAT('%',#{keyword},'%') OR p.project_name LIKE CONCAT('%',#{keyword},'%')) " +
-            "AND (#{status} IS NULL OR #{status}='' OR ds.install_status=#{status}) " +
-            "AND (#{scopeType} IS NULL OR #{scopeType}='' OR ds.scope_type=#{scopeType}) " +
-            "AND (ds.scope_type='GLOBAL' OR p.user_id=#{userId}) " +
-            "ORDER BY ds.updated_at DESC,ds.id DESC")
-    List<SkillDeploymentPO> selectDeployments(@Param("keyword") String keyword,@Param("status") String status,
-                                               @Param("scopeType") String scopeType,@Param("userId") Long userId);
-
-    @Select("SELECT sv.id version_id,sv.storage_path,sv.sha256,sv.file_size,sv.status version_status," +
-            "(SELECT ds.install_status FROM device_skill ds WHERE ds.skill_version_id=sv.id AND ds.device_id=#{deviceId} " +
-            "AND ds.install_status<>'REMOVED' ORDER BY ds.updated_at DESC LIMIT 1) install_status " +
-            "FROM skill_version sv WHERE sv.id=#{versionId} AND EXISTS (SELECT 1 FROM device_skill ds " +
-            "WHERE ds.skill_version_id=sv.id AND ds.device_id=#{deviceId} AND ds.install_status<>'REMOVED') OR sv.id=#{versionId} AND sv.status='ACTIVE' AND EXISTS (" +
-            "SELECT 1 FROM project_expert_binding b JOIN codex_project p ON p.id=b.project_id JOIN expert_version v ON v.id=b.expert_version_id JOIN expert e ON e.id=b.expert_id " +
-            "WHERE p.device_id=#{deviceId} AND e.status<>'DISABLED' AND JSON_CONTAINS(v.skill_version_ids,CAST(#{versionId} AS JSON),'$'))")
+    @Select("SELECT sv.id version_id,sv.storage_path,sv.sha256,sv.file_size,sv.status version_status FROM skill_version sv " +
+            "JOIN skill s ON s.id=sv.skill_id WHERE sv.id=#{versionId} AND sv.status='ACTIVE' AND s.status='ENABLED' AND EXISTS (" +
+            "SELECT 1 FROM codex_project p JOIN agent_workspace w ON w.id=p.workspace_id " +
+            "JOIN project_expert_binding b ON b.project_id=p.id JOIN expert e ON e.id=b.expert_id " +
+            "JOIN user_expert_assignment a ON a.expert_id=e.id AND a.user_id=p.user_id AND a.status='ENABLED' " +
+            "JOIN sys_user u ON u.id=p.user_id AND u.status='ENABLED' " +
+            "JOIN user_device_assignment da ON da.user_id=p.user_id AND da.device_id=p.device_id AND da.status='ENABLED' " +
+            "JOIN expert_version v ON v.expert_id=e.id WHERE p.device_id=#{deviceId} AND p.status='ACTIVE' " +
+            "AND w.status='ENABLED' AND e.status='PUBLISHED' AND JSON_CONTAINS(v.skill_version_ids,CAST(sv.id AS JSON),'$') " +
+            "AND (v.id=b.expert_version_id OR EXISTS (SELECT 1 FROM conversation c WHERE c.project_id=p.id " +
+            "AND c.selected_expert_id=e.id AND c.selected_expert_version_id=v.id)))")
     SkillDownloadPO selectDownload(@Param("versionId") Long versionId,@Param("deviceId") Long deviceId);
-
-    @Update("UPDATE device_skill SET install_status=#{status},error_message=#{error}," +
-            "installed_at=CASE WHEN #{status}='INSTALLED' THEN #{now} ELSE installed_at END " +
-            "WHERE id=#{deviceSkillId} AND device_id=#{deviceId}")
-    int updateDeployment(@Param("deviceSkillId") Long deviceSkillId,@Param("deviceId") Long deviceId,
-                         @Param("status") String status,@Param("error") String error,@Param("now") LocalDateTime now);
-
-    @Update("UPDATE device_skill SET install_status='REMOVING',error_message=NULL,requested_at=#{now} WHERE id=#{id}")
-    int markRemoving(@Param("id") Long id,@Param("now") LocalDateTime now);
-
-    @Update("UPDATE device_skill SET install_status='FAILED',error_message='Agent command timed out' " +
-            "WHERE install_status IN ('INSTALLING','REMOVING') AND requested_at<#{deadline}")
-    int failTimedOutDeployments(@Param("deadline") LocalDateTime deadline);
 }

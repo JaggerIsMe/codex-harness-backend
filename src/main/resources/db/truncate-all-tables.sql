@@ -1,5 +1,5 @@
--- MySQL 8：清空 harness 当前 38 张表，保留表结构并重置自增 ID，恢复 Skill 目录锁哨兵行。
--- 按 2026-09-11 最终 schema 表清单生成；后续新增表需同步补充。
+-- MySQL 8：清空 harness 当前全部表，保留表结构并重置自增 ID，恢复 Skill 目录锁哨兵行。
+-- 按 2026-09-12 最终 schema 表清单生成；后续新增表需同步补充。
 -- 包含用户、管理员、角色、权限、设备、配置、会话和文件元数据。
 -- 执行前停止 Server/Agent 写入并备份；TRUNCATE 隐式提交，不能 ROLLBACK。
 -- 本脚本不恢复角色/权限等初始化数据，不删除磁盘文件，也不清理 Redis。
@@ -12,6 +12,8 @@
 USE `harness`;
 SET @harness_saved_foreign_key_checks = @@SESSION.FOREIGN_KEY_CHECKS;
 SET SESSION FOREIGN_KEY_CHECKS = 0;
+TRUNCATE TABLE `harness`.`skill_expert_assignment_item`;
+TRUNCATE TABLE `harness`.`skill_expert_assignment_batch`;
 
 TRUNCATE TABLE `harness`.`account_email_challenge`;
 TRUNCATE TABLE `harness`.`agent_device`;
@@ -28,7 +30,6 @@ TRUNCATE TABLE `harness`.`conversation_message`;
 TRUNCATE TABLE `harness`.`conversation_message_attachment`;
 TRUNCATE TABLE `harness`.`conversation_turn`;
 TRUNCATE TABLE `harness`.`device_model_assignment`;
-TRUNCATE TABLE `harness`.`device_skill`;
 TRUNCATE TABLE `harness`.`expert`;
 TRUNCATE TABLE `harness`.`expert_version`;
 TRUNCATE TABLE `harness`.`mail_delivery_task`;

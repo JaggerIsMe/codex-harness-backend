@@ -1,6 +1,9 @@
 package com.myharness.codex.entity.po;
 
 public class ExpertPO {
+    private boolean draftChanged;
+    public boolean isDraftChanged() { return draftChanged; }
+    public void setDraftChanged(boolean value) { draftChanged=value; }
     private Long id;
     private String name;
     private String description;

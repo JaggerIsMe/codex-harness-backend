@@ -51,13 +51,11 @@ public class ExpertService {
             validateSkillIds(input.getSkillVersionIds());
             ExpertPO e=id==null ? new ExpertPO() : required(mapper.lock(id));
             if(id!=null) revision(e.getRevision(),input.getRevision());
-            boolean statusChanged=id!=null && !"DRAFT".equals(e.getStatus());
             e.setName(input.getName().trim()); e.setDescription(trim(input.getDescription()));
             e.setSystemPrompt(input.getSystemPrompt().trim()); e.setSkillVersionIds(write(input.getSkillVersionIds()));
             e.setMcpVersionIds(write(input.getMcpBindings()));
             if(id==null) {e.setCreatedBy(user); mapper.insert(e);} else {
-                if(statusChanged) for(Long project:mapper.boundProjects(id)) {mapper.lockProject(project); mapper.bumpProject(project);}
-                e.setStatus("DRAFT"); mapper.draft(e);
+                mapper.draft(e);
             }
             return view(mapper.get(e.getId()),true);
         });
@@ -153,7 +151,6 @@ public class ExpertService {
     }
     public ExpertRuntimeDTO freeze(ConversationPO c, Long projectRevision) {
         access.requirePermission(c.getUserId(),"expert:use");
-        if(mapper.pendingSkillChanges(c.getProjectId())>0) throw conflict("项目 Skills 正在变更，请完成后再发送");
         ProjectPO p=projects.selectOwned(c.getProjectId(),c.getUserId());
         ExpertRuntimeDTO result=new ExpertRuntimeDTO(); result.setProjectRevision(projectRevision);
         if(c.getSelectedExpertId()==null || c.getSelectedExpertVersionId()==null) throw conflict("该旧会话未绑定专家，请创建新会话");
@@ -220,10 +217,6 @@ public class ExpertService {
                 SkillVersionPO skill=validSkill(id); union.putIfAbsent(skill.getId(),skill);
             }
         }
-        for(SkillVersionPO installed:mapper.installedSkills(p.getId())) {
-            if(union.values().stream().anyMatch(required -> required.getSkillId().equals(installed.getSkillId()) && !required.getId().equals(installed.getId())))
-                throw conflict("专家依赖与项目已有 Skill 安装版本冲突");
-        }
         return new ArrayList<>(union.values());
     }
     private List<McpRuntimeDTO> mcpUnion(ProjectPO p,List<ProjectExpertPO> bindings) {
@@ -258,13 +251,12 @@ public class ExpertService {
     private void owned(Long projectId, Long id, Long user) {if(conversations.selectOwnedConversation(projectId,id,user)==null) throw missing();}
     private void idle(Long id) {
         if(mapper.activeTurns(id)>0) throw conflict("项目中有运行中或等待审批的任务，请结束后再修改项目专家");
-        if(mapper.pendingSkillChanges(id)>0) throw conflict("项目 Skills 正在变更，请完成后再修改项目专家");
     }
     private ExpertVO view(ExpertPO e, boolean admin) {
         ExpertVersionPO published=admin && e.getPublishedVersionId()!=null ? mapper.version(e.getPublishedVersionId()) : null;
         return new ExpertVO(e.getId(),e.getName(),e.getDescription(),e.getStatus(),e.getPublishedVersionId(),e.getRevision(),
                 admin?e.getSystemPrompt():null,admin?ids(e.getSkillVersionIds()):List.of(),admin?ids(e.getMcpVersionIds()):List.of(),
-                skillUpdates(published),published==null?List.of():mcp.updates(ids(published.getMcpVersionIds())));
+                skillUpdates(published),published==null?List.of():mcp.updates(ids(published.getMcpVersionIds())),admin && e.isDraftChanged());
     }
     private List<ExpertSkillUpdateVO> skillUpdates(ExpertVersionPO published) {
         if(published==null) return List.of();

@@ -10,7 +10,6 @@ import com.myharness.codex.entity.po.ConversationPO;
 import com.myharness.codex.mapper.AgentDeviceMapper;
 import com.myharness.codex.mapper.ApprovalMapper;
 import com.myharness.codex.mapper.ConversationMapper;
-import com.myharness.codex.mapper.SkillMapper;
 import com.myharness.codex.security.SecureDigests;
 import com.myharness.codex.service.AgentEventService;
 import com.myharness.codex.service.stream.ConversationMessageStream;
@@ -41,16 +40,15 @@ public class AgentEventServiceImpl implements AgentEventService {
     private final AgentDeviceMapper deviceMapper;
     private final ConversationMapper conversationMapper;
     private final ApprovalMapper approvalMapper;
-    private final SkillMapper skillMapper;
     private final ClientEventWebSocketHandler clientEvents;
     private final ConversationMessageStream streams;
     private final TransactionTemplate transactions;
 
     public AgentEventServiceImpl(AgentDeviceMapper deviceMapper, ConversationMapper conversationMapper,
-                                 ApprovalMapper approvalMapper, SkillMapper skillMapper,
+                                 ApprovalMapper approvalMapper,
                                  ClientEventWebSocketHandler clientEvents,ConversationMessageStream streams,TransactionTemplate transactions) {
         this.deviceMapper=deviceMapper; this.conversationMapper=conversationMapper;
-        this.approvalMapper=approvalMapper; this.skillMapper=skillMapper;
+        this.approvalMapper=approvalMapper;
         this.clientEvents=clientEvents;
         this.streams=streams; this.transactions=transactions;
     }
@@ -109,8 +107,6 @@ public class AgentEventServiceImpl implements AgentEventService {
             case TURN_COMPLETED: terminal(deviceId,payload,"COMPLETED",null,now); break;
             case TURN_FAILED: terminal(deviceId,payload,"FAILED","COMMAND_FAILED",now); break;
             case TURN_INTERRUPTED: terminal(deviceId,payload,"INTERRUPTED",null,now); break;
-            case SKILL_INSTALL_RESULT: skillResult(deviceId,envelope,payload,true,now); break;
-            case SKILL_REMOVE_RESULT: skillResult(deviceId,envelope,payload,false,now); break;
             case WORKSPACE_CREATE_RESULT: workspaceCreateResult(deviceId,envelope,payload,now); break;
             case ERROR: agentError(deviceId,envelope,payload,now); break;
             case PONG: break;
@@ -244,12 +240,6 @@ public class AgentEventServiceImpl implements AgentEventService {
         if(conversation!=null && deviceId.equals(conversation.getDeviceId()))
             afterFileCommit(() -> workspaceFiles.refreshProject(conversation.getProjectId(),conversation.getUserId()));
     }
-    private void skillResult(Long deviceId, AgentProtocolEnvelope envelope, JsonNode payload, boolean install, LocalDateTime now) {
-        Long deploymentId=parseId(envelope.getCorrelationId(),"device skill correlationId");
-        boolean success=payload.has("success") && payload.get("success").asBoolean();
-        String status=install ? (success ? "INSTALLED" : "FAILED") : (success ? "REMOVED" : "FAILED");
-        skillMapper.updateDeployment(deploymentId,deviceId,status,optionalText(payload,"error",2000),now);
-    }
     private void agentError(Long deviceId, AgentProtocolEnvelope envelope, JsonNode payload, LocalDateTime now) {
         String command=optionalText(payload,"commandType",32), code=optionalText(payload,"errorCode",64);
         if(java.util.Set.of("SYNC_WORKSPACE_TREE","CREATE_WORKSPACE_DIRECTORY","UPLOAD_WORKSPACE_FILE","PREPARE_WORKSPACE_DOWNLOAD","RELOCATE_WORKSPACE_ENTRY","PREPARE_WORKSPACE_DELETE","DELETE_WORKSPACE_ENTRY","PREPARE_WORKSPACE_ARCHIVE","RECONCILE_WORKSPACE_OPERATION").contains(command==null ? "" : command)) {
@@ -267,9 +257,6 @@ public class AgentEventServiceImpl implements AgentEventService {
                 ConversationPO c=conversationMapper.selectConversation(turn.getConversationId());
                 if(c!=null) afterFileCommit(() -> workspaceFiles.refreshProject(c.getProjectId(),c.getUserId()));
             }
-        } else if ("INSTALL_SKILL".equals(command) || "REMOVE_SKILL".equals(command)) {
-            skillMapper.updateDeployment(parseId(envelope.getCorrelationId(),"device skill correlationId"),deviceId,
-                    "FAILED",optionalText(payload,"message",2000),now);
         } else if ("CREATE_WORKSPACE".equals(command)) {
             AgentWorkspacePO workspace = new AgentWorkspacePO();
             workspace.setId(parseId(envelope.getCorrelationId(), "workspace correlationId"));

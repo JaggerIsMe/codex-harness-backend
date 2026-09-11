@@ -21,7 +21,7 @@ class AgentEventServiceImplTest {
         for(String type:java.util.List.of("TURN_COMPLETED","TURN_FAILED","TURN_INTERRUPTED")) {
             var devices=mock(AgentDeviceMapper.class);var conversations=mock(ConversationMapper.class);
             var files=mock(com.myharness.codex.service.WorkspaceFileService.class);
-            var service=new AgentEventServiceImpl(devices,conversations,mock(ApprovalMapper.class),mock(SkillMapper.class),mock(ClientEventWebSocketHandler.class),streams,transactions);
+            var service=new AgentEventServiceImpl(devices,conversations,mock(ApprovalMapper.class),mock(ClientEventWebSocketHandler.class),streams,transactions);
             service.setWorkspaceFiles(files);
             var c=new ConversationPO();c.setId(5L);c.setDeviceId(3L);c.setUserId(9L);c.setProjectId(2L);
             when(conversations.selectConversation(5L)).thenReturn(c);
@@ -36,7 +36,7 @@ class AgentEventServiceImplTest {
     }
     @Test void compatibleRuntimeUpdateMustMatchItsFrozenPendingTurnAndThread() {
         var devices=mock(AgentDeviceMapper.class);var conversations=mock(ConversationMapper.class);var clients=mock(ClientEventWebSocketHandler.class);
-        var service=new AgentEventServiceImpl(devices,conversations,mock(ApprovalMapper.class),mock(SkillMapper.class),clients,streams,transactions);
+        var service=new AgentEventServiceImpl(devices,conversations,mock(ApprovalMapper.class),clients,streams,transactions);
         var envelope=new AgentProtocolEnvelope();envelope.setType("EXPERT_RUNTIME_UPDATED");envelope.setMessageId("expert-update");envelope.setTimestamp(10L);
         envelope.setPayload(new ObjectMapper().createObjectNode().put("conversationId","4").put("turnId","15")
                 .put("codexThreadId","thread").put("previousExpertRuntimeKey","a".repeat(64)).put("expertRuntimeKey","b".repeat(64)));
@@ -47,7 +47,7 @@ class AgentEventServiceImplTest {
     }
     @Test void expertThreadReplacementMustMatchFrozenPendingTurnAndPreviousThread() {
         var devices=mock(AgentDeviceMapper.class);var conversations=mock(ConversationMapper.class);var clients=mock(ClientEventWebSocketHandler.class);
-        var service=new AgentEventServiceImpl(devices,conversations,mock(ApprovalMapper.class),mock(SkillMapper.class),clients,streams,transactions);
+        var service=new AgentEventServiceImpl(devices,conversations,mock(ApprovalMapper.class),clients,streams,transactions);
         var envelope=new AgentProtocolEnvelope();envelope.setType("THREAD_STARTED");envelope.setMessageId("expert-reset");envelope.setTimestamp(10L);
         envelope.setPayload(new ObjectMapper().createObjectNode().put("conversationId","4").put("turnId","15")
                 .put("previousCodexThreadId","old").put("codexThreadId","new").put("expertRuntimeKey","a".repeat(64)));
@@ -61,7 +61,7 @@ class AgentEventServiceImplTest {
     @Test void replacementRequiresAtomicHistoryAndPreviousBindingCheck() {
         var devices=mock(AgentDeviceMapper.class);var conversations=mock(ConversationMapper.class);
         var clients=mock(ClientEventWebSocketHandler.class);
-        var service=new AgentEventServiceImpl(devices,conversations,mock(ApprovalMapper.class),mock(SkillMapper.class),clients,streams,transactions);
+        var service=new AgentEventServiceImpl(devices,conversations,mock(ApprovalMapper.class),clients,streams,transactions);
         var envelope=new AgentProtocolEnvelope();envelope.setType("THREAD_STARTED");envelope.setMessageId("replace-1");envelope.setTimestamp(10L);
         envelope.setPayload(new ObjectMapper().createObjectNode().put("conversationId","4").put("turnId","15")
                 .put("previousCodexThreadId","old").put("codexThreadId","replacement"));
@@ -83,7 +83,6 @@ class AgentEventServiceImplTest {
         AgentDeviceMapper devices=mock(AgentDeviceMapper.class);
         ConversationMapper conversations=mock(ConversationMapper.class);
         ApprovalMapper approvals=mock(ApprovalMapper.class);
-        SkillMapper skills=mock(SkillMapper.class);
         ClientEventWebSocketHandler clients=mock(ClientEventWebSocketHandler.class);
         when(devices.insertEvent(3L,"3d0fd4b4-7f1f-4f87-8947-ef23dbe0689d","TURN_COMPLETED",10L)).thenReturn(1);
         ConversationPO conversation=new ConversationPO(); conversation.setId(5L); conversation.setDeviceId(3L); conversation.setUserId(9L);
@@ -92,7 +91,7 @@ class AgentEventServiceImplTest {
         AgentProtocolEnvelope envelope=new AgentProtocolEnvelope();
         envelope.setMessageId("3d0fd4b4-7f1f-4f87-8947-ef23dbe0689d"); envelope.setType("TURN_COMPLETED"); envelope.setTimestamp(10L);
         envelope.setPayload(mapper.createObjectNode().put("conversationId","5").put("turnId","7"));
-        AgentEventServiceImpl service=new AgentEventServiceImpl(devices,conversations,approvals,skills,clients,streams,transactions);
+        AgentEventServiceImpl service=new AgentEventServiceImpl(devices,conversations,approvals,clients,streams,transactions);
 
         assertTrue(service.process(3L,envelope));
 
@@ -104,23 +103,21 @@ class AgentEventServiceImplTest {
         AgentDeviceMapper devices=mock(AgentDeviceMapper.class);
         ConversationMapper conversations=mock(ConversationMapper.class);
         ApprovalMapper approvals=mock(ApprovalMapper.class);
-        SkillMapper skills=mock(SkillMapper.class);
         ClientEventWebSocketHandler clients=mock(ClientEventWebSocketHandler.class);
         AgentProtocolEnvelope envelope=new AgentProtocolEnvelope();
         envelope.setType("TURN_EVENT");
         envelope.setPayload(new ObjectMapper().createObjectNode().put("eventSeq",1));
         when(streams.accept(3L,envelope.getPayload())).thenReturn(true);
-        AgentEventServiceImpl service=new AgentEventServiceImpl(devices,conversations,approvals,skills,clients,streams,transactions);
+        AgentEventServiceImpl service=new AgentEventServiceImpl(devices,conversations,approvals,clients,streams,transactions);
         assertTrue(service.process(3L,envelope));
         verify(streams).accept(3L,envelope.getPayload());
-        verifyNoInteractions(devices,conversations,approvals,skills,clients);
+        verifyNoInteractions(devices,conversations,approvals,clients);
     }
 
     @Test void replacesWorkspaceAvailabilityFromCompleteAgentSnapshot() {
         AgentDeviceMapper devices=mock(AgentDeviceMapper.class);
         ConversationMapper conversations=mock(ConversationMapper.class);
         ApprovalMapper approvals=mock(ApprovalMapper.class);
-        SkillMapper skills=mock(SkillMapper.class);
         ClientEventWebSocketHandler clients=mock(ClientEventWebSocketHandler.class);
         when(devices.insertEvent(3L,"8ad73b79-4ff6-4b56-b0d2-434be6a42112","WORKSPACES_CHANGED",10L)).thenReturn(1);
         ObjectMapper mapper=new ObjectMapper();
@@ -129,7 +126,7 @@ class AgentEventServiceImplTest {
         envelope.setType("WORKSPACES_CHANGED"); envelope.setTimestamp(10L);
         envelope.setPayload(mapper.createArrayNode().add(mapper.createObjectNode()
                 .put("name","default-harness").put("rootPath","D:/projects/default-harness")));
-        AgentEventServiceImpl service=new AgentEventServiceImpl(devices,conversations,approvals,skills,clients,streams,transactions);
+        AgentEventServiceImpl service=new AgentEventServiceImpl(devices,conversations,approvals,clients,streams,transactions);
 
         assertTrue(service.process(3L,envelope));
         InOrder order=inOrder(devices);
@@ -142,22 +139,20 @@ class AgentEventServiceImplTest {
         AgentDeviceMapper devices=mock(AgentDeviceMapper.class);
         ConversationMapper conversations=mock(ConversationMapper.class);
         ApprovalMapper approvals=mock(ApprovalMapper.class);
-        SkillMapper skills=mock(SkillMapper.class);
         ClientEventWebSocketHandler clients=mock(ClientEventWebSocketHandler.class);
         when(devices.insertEvent(3L,"8ad73b79-4ff6-4b56-b0d2-434be6a42112","REGISTER",10L)).thenReturn(2);
         AgentProtocolEnvelope envelope=new AgentProtocolEnvelope(); envelope.setMessageId("8ad73b79-4ff6-4b56-b0d2-434be6a42112");
         envelope.setType("REGISTER"); envelope.setTimestamp(10L); envelope.setPayload(new ObjectMapper().createObjectNode());
-        AgentEventServiceImpl service=new AgentEventServiceImpl(devices,conversations,approvals,skills,clients,streams,transactions);
+        AgentEventServiceImpl service=new AgentEventServiceImpl(devices,conversations,approvals,clients,streams,transactions);
         assertFalse(service.process(3L,envelope));
         verify(devices,never()).heartbeat(anyLong(),any());
-        verifyNoInteractions(conversations,approvals,skills,clients,streams);
+        verifyNoInteractions(conversations,approvals,clients,streams);
     }
 
     @Test void completesWorkspaceCreationFromCorrelatedResult() {
         AgentDeviceMapper devices=mock(AgentDeviceMapper.class);
         ConversationMapper conversations=mock(ConversationMapper.class);
         ApprovalMapper approvals=mock(ApprovalMapper.class);
-        SkillMapper skills=mock(SkillMapper.class);
         ClientEventWebSocketHandler clients=mock(ClientEventWebSocketHandler.class);
         when(devices.insertEvent(3L,"8ad73b79-4ff6-4b56-b0d2-434be6a42112","WORKSPACE_CREATE_RESULT",10L)).thenReturn(1);
         when(devices.completeWorkspace(any())).thenReturn(1);
@@ -167,7 +162,7 @@ class AgentEventServiceImplTest {
         envelope.setType("WORKSPACE_CREATE_RESULT"); envelope.setTimestamp(10L); envelope.setCorrelationId("11");
         envelope.setPayload(mapper.createObjectNode().put("requestId","11").put("workspaceName","order-service")
                 .put("success",true).put("rootPath","D:/projects/order-service"));
-        AgentEventServiceImpl service=new AgentEventServiceImpl(devices,conversations,approvals,skills,clients,streams,transactions);
+        AgentEventServiceImpl service=new AgentEventServiceImpl(devices,conversations,approvals,clients,streams,transactions);
 
         assertTrue(service.process(3L,envelope));
         verify(devices).completeWorkspace(argThat(value -> value.getId().equals(11L)
