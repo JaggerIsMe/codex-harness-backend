@@ -14,6 +14,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public interface SkillMapper {
+    // Acquired before Skill/expert/project locks by every catalog writer.
+    @Select("SELECT id FROM skill_catalog_lock WHERE id=1 FOR UPDATE")
+    Integer lockCatalog();
     String SKILL_SELECT = "SELECT s.id,s.skill_name,s.description,s.status,s.created_by,s.created_at,s.updated_at," +
             "(SELECT COUNT(*) FROM skill_version sv WHERE sv.skill_id=s.id) version_count FROM skill s ";
 

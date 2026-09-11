@@ -1,5 +1,5 @@
--- MySQL 8：清空 harness 当前全部 36 张业务表，保留表结构并重置自增 ID。
--- 按 2026-09-10 最终 schema 表清单生成；后续新增表需同步补充。
+-- MySQL 8：清空 harness 当前 38 张表，保留表结构并重置自增 ID，恢复 Skill 目录锁哨兵行。
+-- 按 2026-09-11 最终 schema 表清单生成；后续新增表需同步补充。
 -- 包含用户、管理员、角色、权限、设备、配置、会话和文件元数据。
 -- 执行前停止 Server/Agent 写入并备份；TRUNCATE 隐式提交，不能 ROLLBACK。
 -- 本脚本不恢复角色/权限等初始化数据，不删除磁盘文件，也不清理 Redis。
@@ -38,6 +38,9 @@ TRUNCATE TABLE `harness`.`model_configuration`;
 TRUNCATE TABLE `harness`.`model_configuration_version`;
 TRUNCATE TABLE `harness`.`project_expert_binding`;
 TRUNCATE TABLE `harness`.`skill`;
+TRUNCATE TABLE `harness`.`skill_import_record`;
+TRUNCATE TABLE `harness`.`skill_catalog_lock`;
+INSERT INTO `harness`.`skill_catalog_lock` (id) VALUES (1);
 TRUNCATE TABLE `harness`.`skill_version`;
 TRUNCATE TABLE `harness`.`sys_permission`;
 TRUNCATE TABLE `harness`.`sys_role`;

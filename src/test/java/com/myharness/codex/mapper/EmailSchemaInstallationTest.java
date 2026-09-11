@@ -15,7 +15,7 @@ class EmailSchemaInstallationTest {
             mysql.applyResource("db/seed-rbac.sql");
             mysql.applyResource("db/seed-rbac.sql");
             JdbcTemplate jdbc = new JdbcTemplate(mysql.dataSource());
-            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()", Integer.class)).isEqualTo(36);
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()", Integer.class)).isEqualTo(38);
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user", Integer.class)).isZero();
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_permission", Integer.class)).isEqualTo(20);
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_permission", Integer.class)).isEqualTo(34);

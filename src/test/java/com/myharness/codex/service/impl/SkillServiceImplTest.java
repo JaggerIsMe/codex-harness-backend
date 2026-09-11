@@ -60,6 +60,7 @@ class SkillServiceImplTest {
     void shouldRejectArchiveWithoutRootSkillManifest() throws Exception {
         SkillMapper mapper = mock(SkillMapper.class);
         when(mapper.lockSkill(7L)).thenReturn(skill(7L, "demo"));
+        when(mapper.selectSkill(7L)).thenReturn(skill(7L, "demo"));
         SkillServiceImpl service = service(mapper);
 
         BusinessException error = assertThrows(BusinessException.class,
@@ -78,6 +79,7 @@ class SkillServiceImplTest {
         SkillVersionPO oldActive = version(10L, 7L, "1.0.0", "ACTIVE");
         SkillVersionPO oldDisabled = version(11L, 7L, "0.9.0", "DISABLED");
         when(mapper.lockSkill(7L)).thenReturn(skill(7L, "demo"));
+        when(mapper.selectSkill(7L)).thenReturn(skill(7L, "demo"));
         when(mapper.selectVersions(7L)).thenReturn(java.util.List.of(oldActive, oldDisabled));
         doAnswer(invocation -> { ((SkillVersionPO) invocation.getArgument(0)).setId(12L); return 1; })
                 .when(mapper).insertVersion(any(SkillVersionPO.class));
@@ -93,6 +95,7 @@ class SkillServiceImplTest {
     void onlyLatestVersionCanBeReactivated() {
         SkillMapper mapper = mock(SkillMapper.class);
         when(mapper.lockSkill(7L)).thenReturn(skill(7L, "demo"));
+        when(mapper.selectSkill(7L)).thenReturn(skill(7L, "demo"));
         when(mapper.selectVersion(10L)).thenReturn(version(10L, 7L, "1.0.0", "DISABLED"));
         when(mapper.selectVersions(7L)).thenReturn(java.util.List.of(
                 version(12L, 7L, "2.0.0", "ACTIVE"), version(10L, 7L, "1.0.0", "DISABLED")));
@@ -107,7 +110,7 @@ class SkillServiceImplTest {
 
     private SkillServiceImpl service(SkillMapper mapper) {
         AgentProperties properties = new AgentProperties(); properties.setSkillStorageDir(temporaryDirectory.toString());
-        return new SkillServiceImpl(mapper, properties);
+        return new SkillServiceImpl(mapper, properties, new org.springframework.transaction.support.TransactionTemplate(mock(org.springframework.transaction.PlatformTransactionManager.class)));
     }
     private SkillPO skill(Long id, String name) {
         SkillPO value = new SkillPO(); value.setId(id); value.setSkillName(name); value.setDescription(""); value.setStatus("ENABLED");

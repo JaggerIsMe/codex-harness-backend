@@ -12,6 +12,11 @@ import com.myharness.codex.entity.vo.SkillVersionVO;
 import com.myharness.codex.exception.BusinessException;
 import com.myharness.codex.mapper.SkillMapper;
 import com.myharness.codex.service.SkillService;
+import com.myharness.codex.service.SkillArchive;
+import com.myharness.codex.service.SkillVersionWriter;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -25,26 +30,20 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
-import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 @Service
 @org.springframework.security.access.prepost.PreAuthorize("hasAuthority('skill:manage')")
 public class SkillServiceImpl implements SkillService {
     private static final long MAX_UPLOAD_BYTES = 20L * 1024L * 1024L;
-    private static final int MAX_ENTRIES = 500;
     private final SkillMapper mapper;
     private final Path storageRoot;
+    private final TransactionTemplate tx;
 
-    public SkillServiceImpl(SkillMapper mapper, AgentProperties properties) {
+    public SkillServiceImpl(SkillMapper mapper, AgentProperties properties, TransactionTemplate tx) {
+        this.tx = tx;
         this.mapper = mapper;
         this.storageRoot = Paths.get(properties.getSkillStorageDir()).toAbsolutePath().normalize();
     }
@@ -59,28 +58,57 @@ public class SkillServiceImpl implements SkillService {
     public SkillVO get(Long skillId) { return toVO(requireSkill(skillId)); }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public SkillVO create(String skillName, String description, String version, MultipartFile file, Long operatorId) throws IOException {
         String normalizedName = validateName(skillName);
-        SkillPO skill = new SkillPO();
-        skill.setSkillName(normalizedName); skill.setDescription(validateDescription(description)); skill.setCreatedBy(operatorId);
-        try { mapper.insertSkill(skill); }
-        catch (DuplicateKeyException exception) { throw new BusinessException(ErrorCode.CONFLICT, "Skill 名称已存在"); }
-        storeVersion(skill.getId(), version, file, operatorId);
-        return toVO(requireSkill(skill.getId()));
+        String normalizedDescription = validateDescription(description);
+        SkillVersionPO prepared = prepareVersion(version, file, operatorId);
+        return publishPrepared(prepared, () -> {
+            SkillPO skill = new SkillPO();
+            skill.setSkillName(normalizedName); skill.setDescription(normalizedDescription); skill.setCreatedBy(operatorId);
+            try { mapper.insertSkill(skill); }
+            catch (DuplicateKeyException exception) { throw new BusinessException(ErrorCode.CONFLICT, "Skill 名称已存在"); }
+            prepared.setSkillId(skill.getId());
+            SkillVersionWriter.publish(mapper, prepared);
+            return toVO(requireSkill(skill.getId()));
+        });
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public SkillVersionVO uploadVersion(Long skillId, String version, MultipartFile file, Long operatorId) throws IOException {
-        requireLockedSkill(skillId);
-        mapper.disableActiveVersions(skillId);
-        return new SkillVersionVO(storeVersion(skillId, version, file, operatorId));
+        requireSkill(skillId);
+        SkillVersionPO prepared = prepareVersion(version, file, operatorId);
+        return publishPrepared(prepared, () -> {
+            requireLockedSkill(skillId);
+            prepared.setSkillId(skillId);
+            SkillVersionWriter.publish(mapper, prepared);
+            return new SkillVersionVO(mapper.selectVersion(prepared.getId()));
+        });
+    }
+
+    private <T> T publishPrepared(SkillVersionPO prepared, java.util.function.Supplier<T> publish) {
+        Path file = Path.of(prepared.getStoragePath());
+        try {
+            return tx.execute(status -> {
+                mapper.lockCatalog();
+                if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                        @Override public void afterCompletion(int state) { if (state != STATUS_COMMITTED) removeFailedArchive(file); }
+                    });
+                }
+                return publish.get();
+            });
+        } catch (RuntimeException | Error error) { removeFailedArchive(file); throw error; }
+    }
+
+    private void removeFailedArchive(Path file) {
+        try { Files.deleteIfExists(file); }
+        catch (IOException error) { org.slf4j.LoggerFactory.getLogger(SkillServiceImpl.class).warn("Could not remove rolled back Skill archive", error); }
     }
 
     @Override
     @Transactional
     public SkillVO update(Long skillId, UpdateSkillDTO dto) {
+        mapper.lockCatalog();
         SkillPO skill = requireSkill(skillId);
         skill.setSkillName(validateName(dto.getSkillName()));
         skill.setDescription(validateDescription(dto.getDescription()));
@@ -93,6 +121,7 @@ public class SkillServiceImpl implements SkillService {
     @Override
     @Transactional
     public SkillVersionVO updateVersionStatus(Long skillId, Long versionId, SkillVersionStatusDTO dto) {
+        mapper.lockCatalog();
         requireLockedSkill(skillId);
         SkillVersionPO version = requireVersion(skillId, versionId);
         if ("ACTIVE".equals(dto.getStatus())) {
@@ -117,7 +146,7 @@ public class SkillServiceImpl implements SkillService {
                 skill.getSkillName() + "-" + version.getVersion() + ".zip");
     }
 
-    private SkillVersionPO storeVersion(Long skillId, String rawVersion, MultipartFile upload, Long operatorId) throws IOException {
+    private SkillVersionPO prepareVersion(String rawVersion, MultipartFile upload, Long operatorId) throws IOException {
         String version = validateVersion(rawVersion);
         validateUpload(upload);
         Files.createDirectories(storageRoot);
@@ -129,58 +158,19 @@ public class SkillServiceImpl implements SkillService {
             if (Files.size(temporary) > MAX_UPLOAD_BYTES) throw new BusinessException(ErrorCode.INVALID_REQUEST, "Skill ZIP 不能超过 20MB");
             validateArchive(temporary);
             SkillVersionPO value = new SkillVersionPO();
-            value.setSkillId(skillId); value.setVersion(version); value.setStoragePath(target.toString());
-            value.setSha256(sha256(temporary)); value.setFileSize(Files.size(temporary)); value.setCreatedBy(operatorId);
+            value.setVersion(version); value.setStoragePath(target.toString());
+            value.setSha256(SkillArchive.digest(temporary)); value.setFileSize(Files.size(temporary)); value.setCreatedBy(operatorId);
             move(temporary, target);
-            try { mapper.insertVersion(value); }
-            catch (DuplicateKeyException exception) {
-                Files.deleteIfExists(target); stored = false;
-                throw new BusinessException(ErrorCode.CONFLICT, "该 Skill 版本已存在");
-            }
-            SkillVersionPO saved = mapper.selectVersion(value.getId());
             stored = true;
-            return saved;
+            return value;
         } finally {
             Files.deleteIfExists(temporary);
             if (!stored) Files.deleteIfExists(target);
         }
     }
 
-    private void validateUpload(MultipartFile file) {
-        if (file == null || file.isEmpty()) throw new BusinessException(ErrorCode.INVALID_REQUEST, "请选择 Skill ZIP 文件");
-        if (file.getSize() > MAX_UPLOAD_BYTES) throw new BusinessException(ErrorCode.INVALID_REQUEST, "Skill ZIP 不能超过 20MB");
-        String filename = file.getOriginalFilename();
-        if (filename == null || !filename.toLowerCase(Locale.ROOT).endsWith(".zip"))
-            throw new BusinessException(ErrorCode.INVALID_REQUEST, "Skill 文件必须是 ZIP 格式");
-    }
-
-    private void validateArchive(Path archive) throws IOException {
-        Set<String> entries = new HashSet<>();
-        Set<String> topDirectories = new HashSet<>();
-        boolean rootManifest = false;
-        boolean nestedManifest = false;
-        boolean rootFile = false;
-        int count = 0;
-        try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(archive))) {
-            ZipEntry entry;
-            while ((entry = zip.getNextEntry()) != null) {
-                if (++count > MAX_ENTRIES) throw new BusinessException(ErrorCode.INVALID_REQUEST, "Skill ZIP 文件数量超过 500 个");
-                String name = entry.getName() == null ? "" : entry.getName().replace('\\', '/');
-                Path resolved = storageRoot.resolve(name).normalize();
-                if (name.isEmpty() || !resolved.startsWith(storageRoot)) throw new BusinessException(ErrorCode.INVALID_REQUEST, "Skill ZIP 包含非法路径");
-                String key = name.toLowerCase(Locale.ROOT);
-                if (!entries.add(key)) throw new BusinessException(ErrorCode.INVALID_REQUEST, "Skill ZIP 包含重复路径");
-                String clean = name.endsWith("/") ? name.substring(0, name.length() - 1) : name;
-                int slash = clean.indexOf('/');
-                if (slash > 0) topDirectories.add(clean.substring(0, slash));
-                if (slash < 0 && !entry.isDirectory()) rootFile = true;
-                if ("SKILL.md".equals(clean)) rootManifest = true;
-                if (slash > 0 && clean.indexOf('/', slash + 1) < 0 && clean.endsWith("/SKILL.md")) nestedManifest = true;
-            }
-        }
-        if (!rootManifest && !(nestedManifest && topDirectories.size() == 1 && !rootFile))
-            throw new BusinessException(ErrorCode.INVALID_REQUEST, "Skill ZIP 根目录或唯一顶层目录中必须包含 SKILL.md");
-    }
+    private void validateUpload(MultipartFile file) { SkillArchive.validateUpload(file); }
+    private void validateArchive(Path archive) throws IOException { SkillArchive.inspect(archive); }
 
     private SkillVO toVO(SkillPO skill) {
         List<SkillVersionVO> versions = mapper.selectVersions(skill.getId()).stream().map(SkillVersionVO::new).collect(Collectors.toList());
@@ -201,23 +191,9 @@ public class SkillServiceImpl implements SkillService {
         if (value == null || !skillId.equals(value.getSkillId())) throw new BusinessException(ErrorCode.NOT_FOUND, "Skill 版本不存在");
         return value;
     }
-    private String validateName(String value) {
-        String result = trim(value);
-        if (result == null || !result.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,127}"))
-            throw new BusinessException(ErrorCode.INVALID_REQUEST, "Skill 名称只能包含字母、数字、点、下划线和连字符");
-        return result;
-    }
-    private String validateVersion(String value) {
-        String result = trim(value);
-        if (result == null || !result.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,63}"))
-            throw new BusinessException(ErrorCode.INVALID_REQUEST, "版本号只能包含字母、数字、点、下划线和连字符");
-        return result;
-    }
-    private String validateDescription(String value) {
-        String result = value == null ? "" : value.trim();
-        if (result.length() > 1000) throw new BusinessException(ErrorCode.INVALID_REQUEST, "Skill 描述不能超过 1000 个字符");
-        return result;
-    }
+    private String validateName(String value) { return SkillArchive.name(value); }
+    private String validateVersion(String value) { return SkillArchive.version(value); }
+    private String validateDescription(String value) { return SkillArchive.description(value); }
     private void validateSkillStatus(String status, boolean blankAllowed) {
         if (blankAllowed && (status == null || status.trim().isEmpty())) return;
         if (!("ENABLED".equals(status) || "DISABLED".equals(status))) throw new BusinessException(ErrorCode.INVALID_REQUEST, "Skill 状态不正确");
@@ -226,17 +202,5 @@ public class SkillServiceImpl implements SkillService {
     private void move(Path source, Path target) throws IOException {
         try { Files.move(source, target, StandardCopyOption.ATOMIC_MOVE); }
         catch (AtomicMoveNotSupportedException exception) { Files.move(source, target); }
-    }
-    private String sha256(Path file) throws IOException {
-        final MessageDigest digest;
-        try { digest = MessageDigest.getInstance("SHA-256"); }
-        catch (NoSuchAlgorithmException exception) { throw new IllegalStateException(exception); }
-        try (InputStream input = Files.newInputStream(file)) {
-            byte[] buffer = new byte[8192]; int count;
-            while ((count = input.read(buffer)) >= 0) digest.update(buffer, 0, count);
-        }
-        StringBuilder value = new StringBuilder(64);
-        for (byte part : digest.digest()) value.append(String.format("%02x", part & 0xff));
-        return value.toString();
     }
 }

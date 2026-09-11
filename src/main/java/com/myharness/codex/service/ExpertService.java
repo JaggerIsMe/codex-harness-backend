@@ -45,9 +45,10 @@ public class ExpertService {
             throw conflict("知识库暂未接入");
         if(input.getName()==null || input.getName().isBlank() || input.getSystemPrompt()==null || input.getSystemPrompt().isBlank())
             throw conflict("专家名称和系统提示词不能为空");
-        validateSkillIds(input.getSkillVersionIds());
         mcp.runtimes(input.getMcpBindings());
         return tx.execute(s -> {
+            skills.lockCatalog();
+            validateSkillIds(input.getSkillVersionIds());
             ExpertPO e=id==null ? new ExpertPO() : required(mapper.lock(id));
             if(id!=null) revision(e.getRevision(),input.getRevision());
             boolean statusChanged=id!=null && !"DRAFT".equals(e.getStatus());
@@ -64,6 +65,7 @@ public class ExpertService {
     public ExpertVO publish(Long id, Long revision, boolean compatibleUpgrade, Long user) {
         access.requirePermission(user,"expert:manage");
         return tx.execute(s -> {
+            skills.lockCatalog();
             ExpertPO e=required(mapper.lock(id)); revision(e.getRevision(),revision);
             validateSkillIds(ids(e.getSkillVersionIds()));
             mcp.runtimes(ids(e.getMcpVersionIds()));
@@ -80,7 +82,7 @@ public class ExpertService {
     public ExpertVO status(Long id, String status, Long revision, Long user) {
         access.requirePermission(user,"expert:manage");
         if(!Set.of("UNPUBLISHED","DISABLED").contains(status)) throw conflict("专家状态不正确");
-        return tx.execute(s -> { ExpertPO e=required(mapper.lock(id)); revision(e.getRevision(),revision);
+        return tx.execute(s -> { skills.lockCatalog(); ExpertPO e=required(mapper.lock(id)); revision(e.getRevision(),revision);
             if("DISABLED".equals(e.getStatus()) && "UNPUBLISHED".equals(status)) throw conflict("禁用专家需重新发布后启用");
             for(Long project:mapper.boundProjects(id)) {mapper.lockProject(project); mapper.bumpProject(project);}
             mapper.status(id,status); return view(mapper.get(id),true); });
