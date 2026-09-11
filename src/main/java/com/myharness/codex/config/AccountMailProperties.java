@@ -12,7 +12,7 @@ import org.springframework.validation.annotation.Validated;
 public class AccountMailProperties {
     private boolean enabled;
     private String from = "";
-    private String fromName = "My Harness For Codex";
+    private String fromName = "Vantrue Harness";
     private String publicBaseUrl = "";
     private String hmacKey = "";
     private String encryptionKey = "";

@@ -73,21 +73,21 @@ public class MailDeliveryWorker {
                     String token = crypto.decrypt(task.getEncryptedPayload(), task.payloadBinding());
                     if (!token.matches("[A-Za-z0-9_-]{43}")) throw new IllegalStateException();
                     String base = properties.getPublicBaseUrl().replaceAll("/+$", "");
-                    subject = "激活你的 My Harness For Codex 账号";
-                    text = "你已受邀使用 My Harness For Codex。\n\n请打开以下链接设置密码并激活账号：\n"
+                    subject = "激活你的 Vantrue Harness 账号";
+                    text = "你已受邀使用 Vantrue Harness。\n\n请打开以下链接设置密码并激活账号：\n"
                             + base + "/activate?token=" + token + "\n\n链接有效至 " + expiry(task)
                             + "。链接只能成功使用一次，重发后旧链接失效。\n如非本人操作，请忽略此邮件。";
                 }
                 case "PASSWORD_RESET" -> {
                     String code = crypto.decrypt(task.getEncryptedPayload(), task.payloadBinding());
                     if (!code.matches("[0-9]{6}")) throw new IllegalStateException();
-                    subject = "My Harness For Codex 密码重置验证码";
+                    subject = "Vantrue Harness 密码重置验证码";
                     text = "你的密码重置验证码为：" + code + "\n\n有效至 " + expiry(task)
                             + "。请勿向他人提供验证码，重发后旧验证码失效。\n如非本人操作，请忽略此邮件，你的密码不会因此改变。";
                 }
                 case "PASSWORD_CHANGED" -> {
-                    subject = "My Harness For Codex 密码已变更";
-                    text = "你的 My Harness For Codex 账号密码已变更。旧登录凭证已失效。\n\n如果这不是你本人操作，请立即通过忘记密码重新设置密码并联系系统管理员。";
+                    subject = "Vantrue Harness 密码已变更";
+                    text = "你的 Vantrue Harness 账号密码已变更。旧登录凭证已失效。\n\n如果这不是你本人操作，请立即通过忘记密码重新设置密码并联系系统管理员。";
                 }
                 default -> throw new IllegalStateException();
             }
