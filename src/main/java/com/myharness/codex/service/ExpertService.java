@@ -258,7 +258,28 @@ public class ExpertService {
         if(mapper.activeTurns(id)>0) throw conflict("项目中有运行中或等待审批的任务，请结束后再修改项目专家");
         if(mapper.pendingSkillChanges(id)>0) throw conflict("项目 Skills 正在变更，请完成后再修改项目专家");
     }
-    private ExpertVO view(ExpertPO e, boolean admin) {return new ExpertVO(e.getId(),e.getName(),e.getDescription(),e.getStatus(),e.getPublishedVersionId(),e.getRevision(),admin?e.getSystemPrompt():null,admin?ids(e.getSkillVersionIds()):List.of(),admin?ids(e.getMcpVersionIds()):List.of());}
+    private ExpertVO view(ExpertPO e, boolean admin) {
+        ExpertVersionPO published=admin && e.getPublishedVersionId()!=null ? mapper.version(e.getPublishedVersionId()) : null;
+        return new ExpertVO(e.getId(),e.getName(),e.getDescription(),e.getStatus(),e.getPublishedVersionId(),e.getRevision(),
+                admin?e.getSystemPrompt():null,admin?ids(e.getSkillVersionIds()):List.of(),admin?ids(e.getMcpVersionIds()):List.of(),
+                skillUpdates(published),published==null?List.of():mcp.updates(ids(published.getMcpVersionIds())));
+    }
+    private List<ExpertSkillUpdateVO> skillUpdates(ExpertVersionPO published) {
+        if(published==null) return List.of();
+        List<ExpertSkillUpdateVO> updates=new ArrayList<>();
+        // Compare the immutable release: saving a refreshed draft must not clear the publication notice.
+        for(Long id:ids(published.getSkillVersionIds())) {
+            SkillVersionPO current=skills.selectVersion(id);
+            if(current==null) continue;
+            SkillPO skill=skills.selectSkill(current.getSkillId());
+            if(skill==null || !"ENABLED".equals(skill.getStatus())) continue;
+            skills.selectVersions(skill.getId()).stream().filter(v -> "ACTIVE".equals(v.getStatus())).findFirst()
+                    .filter(available -> !Objects.equals(current.getId(),available.getId()))
+                    .ifPresent(available -> updates.add(new ExpertSkillUpdateVO(skill.getId(),skill.getSkillName(),
+                            current.getId(),current.getVersion(),available.getId(),available.getVersion())));
+        }
+        return updates;
+    }
     private List<Long> ids(String value) {if(value==null || value.isBlank()) return List.of();try {return json.readValue(value,new TypeReference<List<Long>>(){});} catch(Exception e) {throw new IllegalStateException("Invalid expert capability list",e);} }
     private void revision(Long actual, Long expected) {if(!Objects.equals(actual,expected)) throw conflict("配置已变更，请刷新后重试");}
     private ExpertPO required(ExpertPO e) {if(e==null) throw missing(); return e;}

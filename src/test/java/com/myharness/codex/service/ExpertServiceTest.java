@@ -68,6 +68,67 @@ class ExpertServiceTest {
         assertTrue(result.upgradeAvailable());assertEquals(101L,result.latestVersionId());assertEquals(2L,result.latestVersionNo());
     }
 
+    @Test void adminListReportsSkillUpdateWhenPublishedExpertPinsDisabledPreviousVersion() {
+        skill(50L,7L);skill(51L,7L);
+        skills.selectVersion(50L).setStatus("DISABLED");
+        var skillVersions=List.of(skills.selectVersion(51L),skills.selectVersion(50L));
+        when(skills.selectVersions(7L)).thenReturn(skillVersions);
+        versions.get(100L).setSkillVersionIds("[50]");
+        var expert=new ExpertPO();expert.setId(10L);expert.setName("Java 专家");expert.setStatus("PUBLISHED");
+        expert.setPublishedVersionId(100L);expert.setSkillVersionIds("[50]");expert.setRevision(1L);
+        when(mapper.list("")).thenReturn(List.of(expert));
+
+        var result=service.list("",true,2L).getFirst();
+
+        assertEquals(1,result.skillUpdates().size(),"专家列表应提示已发布版本的 Skill 依赖需要更新并重新发布");
+        assertEquals(50L,result.skillUpdates().getFirst().currentVersionId());
+        assertEquals(51L,result.skillUpdates().getFirst().availableVersionId());
+        assertEquals("PUBLISHED",result.status());
+        assertEquals(List.of(50L),result.skillVersionIds());
+
+        when(mapper.lock(10L)).thenReturn(expert);when(mapper.get(10L)).thenReturn(expert);
+        var draft=new ExpertDraftDTO();draft.setName("Java 专家");draft.setSystemPrompt("Review Java");
+        draft.setSkillVersionIds(List.of(51L));draft.setRevision(1L);
+        assertEquals(1,service.save(10L,draft,2L).skillUpdates().size());
+        assertEquals(1,service.list("",true,2L).getFirst().skillUpdates().size());
+
+        when(mapper.nextVersion(10L)).thenReturn(2L);
+        doAnswer(i -> {var version=(ExpertVersionPO)i.getArgument(0);version.setId(101L);versions.put(101L,version);return 1;}).when(mapper).publish(any());
+        doAnswer(i -> {expert.setPublishedVersionId(101L);expert.setStatus("PUBLISHED");return 1;}).when(mapper).published(10L,101L);
+        assertTrue(service.publish(10L,1L,true,2L).skillUpdates().isEmpty());
+        assertTrue(service.list("",true,2L).getFirst().skillUpdates().isEmpty());
+        assertEquals("[50]",versions.get(100L).getSkillVersionIds());
+        assertEquals("[51]",versions.get(101L).getSkillVersionIds());
+        verify(mapper,never()).bind(any());
+    }
+
+    @Test void adminListDoesNotAdvertiseUnavailableSkillVersionsOrUnpublishedExperts() {
+        skill(50L,7L);skill(51L,7L);
+        var current=skills.selectVersion(50L);var replacement=skills.selectVersion(51L);
+        replacement.setStatus("DISABLED");
+        when(skills.selectVersions(7L)).thenReturn(List.of(replacement,current));
+        versions.get(100L).setSkillVersionIds("[50]");
+        var expert=new ExpertPO();expert.setId(10L);expert.setPublishedVersionId(100L);
+        when(mapper.list("")).thenReturn(List.of(expert));
+        assertTrue(service.list("",true,2L).getFirst().skillUpdates().isEmpty());
+
+        current.setStatus("DISABLED");
+        assertTrue(service.list("",true,2L).getFirst().skillUpdates().isEmpty());
+        replacement.setStatus("ACTIVE");skills.selectSkill(7L).setStatus("DISABLED");
+        assertTrue(service.list("",true,2L).getFirst().skillUpdates().isEmpty());
+        skills.selectSkill(7L).setStatus("ENABLED");expert.setPublishedVersionId(null);
+        assertTrue(service.list("",true,2L).getFirst().skillUpdates().isEmpty());
+    }
+
+    @Test void marketDoesNotExposeAdministratorSkillUpdateDetails() {
+        var expert=new ExpertPO();expert.setId(10L);expert.setPublishedVersionId(100L);
+        when(mapper.market("",2L)).thenReturn(List.of(expert));
+        assertTrue(service.list("",false,2L).getFirst().skillUpdates().isEmpty());
+        assertTrue(service.list("",false,2L).getFirst().mcpUpdates().isEmpty());
+        verify(skills,never()).selectVersions(anyLong());
+        verify(mcp,never()).updates(anyList());
+    }
+
     @Test void unavailableOrUnassignedExpertBlocksNewAndExistingConversations() {
         service.bindAtCreation(c,10L);bindings.getFirst().setStatus("UNPUBLISHED");
         assertThrows(BusinessException.class,()->service.freeze(c,5L));assertFalse(service.selection(1L,3L,2L).available());

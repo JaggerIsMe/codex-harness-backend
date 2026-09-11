@@ -60,10 +60,13 @@ public class McpConfigurationService {
         return tx.execute(s -> {
             McpConfigurationPO configuration=required(mapper.lock(id));revision(configuration.getRevision(),input.getRevision());
             if(mapper.codeExists(input.getServerCode(),id)>0) throw conflict("MCP Server Code 已存在");
+            List<Long> projects=mapper.boundProjectsForConfiguration(id);projects.forEach(mapper::lockProject);
             configuration.setServerCode(input.getServerCode());configuration.setName(input.getName().trim());
             configuration.setDescription(trim(input.getDescription()));
             McpConfigurationVersionPO version=version(configuration,mapper.nextVersion(id),spec);
+            mapper.revokeActiveVersions(id);
             mapper.insertVersion(version);configuration.setCurrentVersionId(version.getId());mapper.update(configuration);
+            projects.forEach(mapper::bumpProject);
             return view(required(mapper.get(id)));
         });
     }
@@ -101,7 +104,23 @@ public class McpConfigurationService {
     public List<McpSelectableVersionVO> selectableVersions(Long userId) {
         access.requirePermission(userId,"expert:manage");
         return mapper.selectableVersions().stream().map(v -> new McpSelectableVersionVO(v.getMcpConfigurationId(),v.getId(),
-                v.getVersionNo(),v.getServerCode(),v.getName(),read(v.getRuntimeSpec()).getTransportType(),v.getConfigDigest())).toList();
+                v.getVersionNo(),v.getServerCode(),v.getName(),read(v.getRuntimeSpec()).getTransportType(),v.getConfigDigest(),
+                mapper.previousVersionIds(v.getMcpConfigurationId(),v.getVersionNo()))).toList();
+    }
+
+    public List<ExpertMcpUpdateVO> updates(List<Long> versionIds) {
+        List<ExpertMcpUpdateVO> result=new ArrayList<>();
+        for(Long id:versionIds) {
+            McpConfigurationVersionPO current=mapper.version(id);
+            if(current==null || !"ENABLED".equals(current.getConfigurationStatus())) continue;
+            McpConfigurationPO configuration=mapper.get(current.getMcpConfigurationId());
+            if(configuration==null || Objects.equals(current.getId(),configuration.getCurrentVersionId())) continue;
+            McpConfigurationVersionPO latest=mapper.version(configuration.getCurrentVersionId());
+            if(latest!=null && "ACTIVE".equals(latest.getVersionStatus()) && latest.getVersionNo()>current.getVersionNo())
+                result.add(new ExpertMcpUpdateVO(current.getMcpConfigurationId(),latest.getName(),current.getId(),current.getVersionNo(),
+                        latest.getId(),latest.getVersionNo()));
+        }
+        return List.copyOf(result);
     }
 
     public List<McpRuntimeDTO> runtimes(List<Long> versionIds) {
