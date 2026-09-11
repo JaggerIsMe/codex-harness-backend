@@ -25,7 +25,7 @@ class AuthControllerTest {
     @BeforeEach
     void setUp() {
         authService = mock(AuthService.class);
-        mockMvc = MockMvcBuilders.standaloneSetup(new AuthController(authService))
+        mockMvc = MockMvcBuilders.standaloneSetup(new AuthController(authService,mock(com.myharness.codex.security.RefreshCookieService.class)))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }

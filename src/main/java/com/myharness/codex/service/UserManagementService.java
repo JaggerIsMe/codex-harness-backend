@@ -31,11 +31,13 @@ public class UserManagementService {
     private final ObjectMapper json;
     private final AccountEmailService accounts;
     private final AccountMailService mail;
+    private final RedisLoginSessionStore sessions;
     public UserManagementService(RbacMapper rbac,SysUserMapper users,AgentDeviceMapper devices,ExpertMapper experts,PasswordEncoder passwords,
                                  AuthorizationService access,ClientEventWebSocketHandler sockets,ObjectMapper json,
-                                 AccountEmailService accounts,AccountMailService mail) {
+                                 AccountEmailService accounts,AccountMailService mail,RedisLoginSessionStore sessions) {
         this.rbac=rbac;this.users=users;this.devices=devices;this.experts=experts;this.passwords=passwords;this.access=access;this.sockets=sockets;this.json=json;
         this.accounts=accounts;this.mail=mail;
+        this.sessions=sessions;
     }
     private Long administrator() { Long id=UserContext.requireCurrentUser().getId();access.requirePermission(id,"system:user:manage");return id; }
     public PageVO<ManagedUserVO> list(String keyword,String status,int page,int size) {
@@ -64,21 +66,21 @@ public class UserManagementService {
         rbac.updateUser(id,dto.displayName().trim(),dto.status());
         if("DISABLED".equals(dto.status())) accounts.revokeChallenges(id);
         audit(operator,"USER_UPDATE",id,Map.of("previousStatus",user.getStatus(),"status",dto.status(),"displayName",dto.displayName()));
-        disconnectAfterCommit(id);return view(users.selectById(id));
+        disconnectAfterCommit(id,user.getTokenVersion()+1);return view(users.selectById(id));
     }
     @Transactional(isolation=Isolation.READ_COMMITTED) public ManagedUserVO role(Long id,AssignRoleDTO dto) {
         Long operator=administrator();lockAdministration();SysUserPO user=requireLocked(id);validateRole(dto.role());
         List<String> before=rbac.roles(id);protectLastAdmin(user,user.getStatus(),List.of(dto.role()));
         rbac.deleteRoles(id);rbac.assignRole(id,dto.role());rbac.revokeTokens(id);
         audit(operator,"USER_ROLE_ASSIGN",id,Map.of("before",before,"after",List.of(dto.role())));
-        disconnectAfterCommit(id);return view(users.selectById(id));
+        disconnectAfterCommit(id,user.getTokenVersion()+1);return view(users.selectById(id));
     }
     @Transactional(isolation=Isolation.READ_COMMITTED) public ManagedUserVO assignDevices(Long id,AssignDevicesDTO dto) {
-        Long operator=administrator();lockAdministration();requireLocked(id);validateDevices(dto.deviceIds());
+        Long operator=administrator();lockAdministration();SysUserPO user=requireLocked(id);validateDevices(dto.deviceIds());
         List<Long> before=rbac.deviceIds(id);rbac.revokeDevices(id);
         for(Long device:new LinkedHashSet<>(dto.deviceIds())) rbac.assignDevice(id,device,operator);
         rbac.revokeTokens(id);audit(operator,"USER_DEVICE_ASSIGN",id,Map.of("before",before,"after",dto.deviceIds()));
-        disconnectAfterCommit(id);return view(users.selectById(id));
+        disconnectAfterCommit(id,user.getTokenVersion()+1);return view(users.selectById(id));
     }
     @Transactional(isolation=Isolation.READ_COMMITTED) public ManagedUserVO assignExperts(Long id,AssignExpertsDTO dto) {
         Long operator=administrator();lockAdministration();requireLocked(id);
@@ -99,20 +101,33 @@ public class UserManagementService {
         if(!user.isActivated() || !"ENABLED".equals(user.getStatus()))
             throw new BusinessException(ErrorCode.CONFLICT,"只能重置已激活且启用账号的密码");
         rbac.changePassword(id,passwords.encode(dto.password()),true);accounts.revokeChallenges(id);
-        mail.enqueuePasswordChanged(user);audit(operator,"USER_PASSWORD_RESET",id,Map.of());disconnectAfterCommit(id);
+        mail.enqueuePasswordChanged(user);audit(operator,"USER_PASSWORD_RESET",id,Map.of());disconnectAfterCommit(id,user.getTokenVersion()+1);
     }
-    @Transactional public void changeOwnPassword(ChangePasswordDTO dto) {
+    @Transactional(isolation=Isolation.READ_COMMITTED) public void changeOwnPassword(ChangePasswordDTO dto) {
         Long id=UserContext.requireCurrentUser().getId();SysUserPO user=requireLocked(id);
         if(!user.isActivated() || !"ENABLED".equals(user.getStatus())) throw new BusinessException(ErrorCode.UNAUTHORIZED);
+        requireCurrentLogin(user);
         if(!passwords.matches(dto.currentPassword(),user.getPasswordHash())) throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
         PasswordPolicy.validate(dto.newPassword());
         if(passwords.matches(dto.newPassword(),user.getPasswordHash())) throw new BusinessException(ErrorCode.INVALID_REQUEST,"新密码不能与原密码相同");
         rbac.changePassword(id,passwords.encode(dto.newPassword()),false);accounts.revokeChallenges(id);
-        mail.enqueuePasswordChanged(user);audit(id,"USER_PASSWORD_CHANGE",id,Map.of());disconnectAfterCommit(id);
+        mail.enqueuePasswordChanged(user);audit(id,"USER_PASSWORD_CHANGE",id,Map.of());disconnectAfterCommit(id,user.getTokenVersion()+1);
     }
-    /** Logout revokes every login credential of the account. */
-    @Transactional public void logout() {
-        Long id=UserContext.requireCurrentUser().getId();rbac.revokeTokens(id);audit(id,"USER_LOGOUT",id,Map.of());disconnectAfterCommit(id);
+    /** A delayed logout may revoke only the login that authenticated its request. */
+    @Transactional(isolation=Isolation.READ_COMMITTED) public void logout() {
+        Long id=UserContext.requireCurrentUser().getId();
+        SysUserPO user=requireLocked(id);
+        var current=requireCurrentLogin(user);
+        if(!sessions.revoke(id,current)) throw new BusinessException(ErrorCode.UNAUTHORIZED);
+        rbac.revokeTokens(id);audit(id,"USER_LOGOUT",id,Map.of());disconnectAfterCommit(id,user.getTokenVersion()+1);
+    }
+    private RedisLoginSessionStore.Session requireCurrentLogin(SysUserPO user) {
+        var login=UserContext.requireCurrentUser().getLoginSession();
+        if(!user.isActivated() || !"ENABLED".equals(user.getStatus()) || login==null || login.version()!=user.getTokenVersion())
+            throw new BusinessException(ErrorCode.UNAUTHORIZED);
+        var current=sessions.read(user.getId());
+        if (!login.sameLogin(current) || !current.active(java.time.Instant.now().getEpochSecond())) throw new BusinessException(ErrorCode.UNAUTHORIZED);
+        return current;
     }
     private void lockAdministration() {
         // READ_COMMITTED is essential: after waiting for this lock, do not reuse a pre-lock MySQL snapshot.
@@ -136,9 +151,9 @@ public class UserManagementService {
         try {rbac.audit(operator,action,"USER",String.valueOf(target),json.writeValueAsString(detail));}
         catch(JsonProcessingException ex) {throw new IllegalStateException(ex);}
     }
-    private void disconnectAfterCommit(Long id) {
+    private void disconnectAfterCommit(Long id,long version) {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override public void afterCommit() {sockets.disconnectUser(id);}
+            @Override public void afterCommit() {sockets.disconnectBeforeVersion(id,version,false);}
         });
     }
 }

@@ -6,6 +6,10 @@ public enum ErrorCode {
 
     INVALID_REQUEST(400, HttpStatus.BAD_REQUEST, "请求参数不正确"),
     UNAUTHORIZED(401, HttpStatus.UNAUTHORIZED, "未登录或登录已失效"),
+    SESSION_REPLACED(40121, HttpStatus.UNAUTHORIZED, "账号已在其他位置登录，请重新登录"),
+    ACCESS_TOKEN_EXPIRED(40122, HttpStatus.UNAUTHORIZED, "访问凭证已过期，请刷新凭证"),
+    REFRESH_CONFLICT(40922, HttpStatus.CONFLICT, "刷新凭证已轮换，请读取最新状态后重试"),
+    SESSION_UNAVAILABLE(50322, HttpStatus.SERVICE_UNAVAILABLE, "登录服务暂不可用，请稍后重试"),
     FORBIDDEN(403, HttpStatus.FORBIDDEN, "没有执行此操作的权限"),
     PASSWORD_CHANGE_REQUIRED(40301, HttpStatus.FORBIDDEN, "请先修改初始密码"),
     TOO_MANY_REQUESTS(429, HttpStatus.TOO_MANY_REQUESTS, "登录尝试过于频繁，请稍后再试"),

@@ -133,7 +133,7 @@ class AccountEmailDatabaseTest {
         assertThat(passwords.matches("AformalPassword123", activated.getPasswordHash())).isTrue();
         assertThat(challenges.latest(user.getId(), "ACTIVATION").getStatus()).isEqualTo("USED");
         assertThat(jdbc.queryForObject("SELECT encrypted_payload FROM mail_delivery_task", String.class)).isNull();
-        verify(sockets).disconnectUser(user.getId());
+        verify(sockets).disconnectBeforeVersion(user.getId(),user.getTokenVersion()+1,false);
         assertError(ErrorCode.EMAIL_VERIFICATION_USED, () -> accounts.activate(token, "AnotherPassword123", null));
     }
 
@@ -216,7 +216,7 @@ class AccountEmailDatabaseTest {
         assertThat(changed.isMustChangePassword()).isFalse();
         assertThat(challenges.latest(user.getId(), "PASSWORD_RESET").getStatus()).isEqualTo("USED");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM mail_delivery_task WHERE template='PASSWORD_CHANGED' AND encrypted_payload IS NULL", Integer.class)).isEqualTo(1);
-        verify(sockets).disconnectUser(user.getId());
+        verify(sockets).disconnectBeforeVersion(user.getId(),user.getTokenVersion()+1,false);
         assertError(ErrorCode.EMAIL_VERIFICATION_INVALID, () -> accounts.resetPassword(user.getEmail(), code, "YetAnotherPassword123", "127.0.0.1"));
     }
 

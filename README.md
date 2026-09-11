@@ -99,7 +99,9 @@ mvn spring-boot:run
 
 ## 已实现接口
 
-- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/login`（JSON 与 `X-Harness-Refresh: 1`）
+- `POST /api/v1/auth/refresh`（JSON、专用请求头与 HttpOnly Cookie，详见自动续期说明）
+- `POST /api/v1/auth/activity`（有效 Bearer；仅用户交互驱动）
 - `POST /api/v1/auth/activation/validate`
 - `POST /api/v1/auth/activate`
 - `POST /api/v1/auth/activation/resend`
@@ -139,7 +141,9 @@ mvn spring-boot:run
 
 名称修改仅影响展示名称，不改变 Workspace 路径或 Codex Thread。删除会移除平台内的项目/会话及会话历史和附件关联；项目独占 Workspace 标记为不可用，Device 上的实际文件保留。若相关会话仍有 CREATED、RUNNING 或 WAITING_APPROVAL 状态的 Turn，删除返回 409，需先停止任务。准备中或初始化中的项目/会话可删除，晚到的 Agent 回调不会恢复已删除记录。工作区传输操作失效，平台临时传输文件由现有清理任务回收。
 
-登录、激活和找回仅按列出的 POST 路径公开；Agent 使用独立凭据。其余用户 API 要求 `Authorization: Bearer <JWT>`，且账号已激活、启用。用户返回 `email` 和 `displayName`，JWT 只保存稳定用户 ID、凭证版本和标准生命周期字段。
+登录、激活和找回仅按列出的 POST 路径公开；刷新接口使用专用请求头与 Refresh Token Cookie 独立鉴权，Agent 使用独立凭据。其余用户 API（包括 activity）要求 `Authorization: Bearer <JWT>`，且账号已激活、启用。用户返回 `email` 和 `displayName`，JWT 保存稳定用户 ID、凭证版本、登录会话 ID `sid` 和标准生命周期字段。
+
+用户采用单端登录：后登录替换旧登录，同源浏览器多标签共享当前会话。Redis 保存唯一当前登录会话，鉴权同时检查数据库版本与 Redis 会话。自动续期采用 Access JWT 120 分钟、提前 10 分钟刷新、空闲 120 分钟、登录起绝对最长 7 天；Refresh Token 使用 HttpOnly Cookie，同源 HTTPS 代理及支持 Web Locks 的浏览器为生产部署前提。Redis 暂不可用返回 503，前端保留凭据供恢复后重试。本次不新增 SQL 表；已执行验证、Cookie 配置及 Redis 快照恢复边界见 [自动续期说明](../../docs/automatic-session-renewal.md)，首次单端实现记录见 [单端登录说明](../../docs/single-login-sessions.md)。
 
 ## 验证
 

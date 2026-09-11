@@ -62,8 +62,10 @@ class WorkspaceFileHttpSecurityTest {
         var d=new AgentDevicePO();d.setId(4L);d.setStatus("ONLINE");d.setTokenHash(SecureDigests.sha256("device-token"));
         when(devices.selectByCode("device")).thenReturn(d);
         d.setWorkspaceFiles(true);when(devices.selectById(4L)).thenReturn(d);
-        when(users.authenticate(anyString())).thenThrow(new BusinessException(ErrorCode.UNAUTHORIZED));
-        var u=new SysUserPO();u.setId(3L);u.setEmail("owner@example.test");doReturn(u).when(users).authenticate("user-token");
+        when(users.authenticateSession(anyString())).thenThrow(new BusinessException(ErrorCode.UNAUTHORIZED));
+        var u=new SysUserPO();u.setId(3L);u.setEmail("owner@example.test");
+        var session=new RedisLoginSessionStore.Session(0,"00000000-0000-0000-0000-000000000001",java.time.Instant.now().plusSeconds(7200).getEpochSecond());
+        doReturn(new UserAuthenticationService.AuthenticatedUser(u,session)).when(users).authenticateSession("user-token");
         when(access.permissions(3L)).thenReturn(List.of("workspace:use"));
         mvc=MockMvcBuilders.webAppContextSetup(context).addFilters(context.getBean(FilterChainProxy.class)).build();
     }

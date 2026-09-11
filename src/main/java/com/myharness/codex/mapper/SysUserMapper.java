@@ -9,9 +9,14 @@ public interface SysUserMapper {
 
     SysUserPO selectByEmail(@Param("email") String email);
 
+    SysUserPO lockByEmail(@Param("email") String email);
+    SysUserPO lockById(@Param("id") Long id);
+    int revokeVersion(@Param("id") Long id,@Param("expectedVersion") long expectedVersion);
+
     SysUserPO selectById(@Param("id") Long id);
 
     int insert(SysUserPO user);
 
-    int updateLastLoginAt(@Param("id") Long id, @Param("lastLoginAt") LocalDateTime lastLoginAt);
+    int advanceLogin(@Param("id") Long id, @Param("expectedVersion") long expectedVersion,
+                     @Param("lastLoginAt") LocalDateTime lastLoginAt);
 }

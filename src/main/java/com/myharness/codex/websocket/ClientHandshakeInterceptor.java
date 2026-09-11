@@ -14,9 +14,13 @@ public class ClientHandshakeInterceptor implements HandshakeInterceptor {
     @Override public boolean beforeHandshake(ServerHttpRequest request,ServerHttpResponse response,WebSocketHandler handler,Map<String,Object> attributes) {
         try {
             String ticket=UriComponentsBuilder.fromUri(request.getURI()).build().getQueryParams().getFirst("ticket");
-            String token=tickets.consume(ticket);var user=authentication.authenticate(token);
+            String token=tickets.consume(ticket);var authenticated=authentication.authenticateSession(token);var user=authenticated.user();
             if(user.isMustChangePassword()){response.setStatusCode(HttpStatus.FORBIDDEN);return false;}
-            attributes.put("userId",user.getId());attributes.put("token",token);return true;
+            attributes.put("userId",user.getId());attributes.put("token",token);
+            attributes.put("loginVersion",authenticated.session().version());
+            attributes.put("loginSid",authenticated.session().sid());return true;
+        } catch(com.myharness.codex.exception.BusinessException ex){
+            response.setStatusCode(ex.getErrorCode().getHttpStatus());return false;
         } catch(RuntimeException ex){response.setStatusCode(HttpStatus.UNAUTHORIZED);return false;}
     }
     @Override public void afterHandshake(ServerHttpRequest request,ServerHttpResponse response,WebSocketHandler handler,Exception ex){}

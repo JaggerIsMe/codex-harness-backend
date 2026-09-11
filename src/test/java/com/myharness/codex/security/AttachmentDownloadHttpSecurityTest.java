@@ -51,8 +51,9 @@ class AttachmentDownloadHttpSecurityTest {
     @BeforeEach void setup() {
         reset(attachments,conversations,projects,access,users,files);
         var user=new SysUserPO();user.setId(1L);user.setEmail("owner@example.test");
-        when(users.authenticate(anyString())).thenThrow(new BusinessException(ErrorCode.UNAUTHORIZED));
-        doReturn(user).when(users).authenticate("user-token");when(access.permissions(1L)).thenReturn(List.of("workspace:use"));
+        when(users.authenticateSession(anyString())).thenThrow(new BusinessException(ErrorCode.UNAUTHORIZED));
+        var session=new RedisLoginSessionStore.Session(0,"00000000-0000-0000-0000-000000000001",java.time.Instant.now().plusSeconds(7200).getEpochSecond());
+        doReturn(new UserAuthenticationService.AuthenticatedUser(user,session)).when(users).authenticateSession("user-token");when(access.permissions(1L)).thenReturn(List.of("workspace:use"));
         var project=new ProjectPO();project.setId(2L);project.setStatus("ACTIVE");when(projects.selectOwned(2L,1L)).thenReturn(project);
         var conversation=new ConversationPO();conversation.setId(3L);conversation.setProjectId(2L);conversation.setUserId(1L);conversation.setDeviceId(4L);
         when(conversations.selectOwnedConversation(2L,3L,1L)).thenReturn(conversation);

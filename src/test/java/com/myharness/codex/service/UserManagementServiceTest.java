@@ -19,11 +19,13 @@ import static org.mockito.Mockito.*;
 class UserManagementServiceTest {
     RbacMapper rbac;SysUserMapper users;AgentDeviceMapper devices;ExpertMapper experts;ClientEventWebSocketHandler sockets;
     AccountEmailService accounts;com.myharness.codex.service.mail.AccountMailService mail;
+    RedisLoginSessionStore sessions;
     UserManagementService service;SysUserPO target;BCryptPasswordEncoder encoder=new BCryptPasswordEncoder(4);
     @BeforeEach void setup(){
         rbac=mock(RbacMapper.class);users=mock(SysUserMapper.class);devices=mock(AgentDeviceMapper.class);experts=mock(ExpertMapper.class);sockets=mock(ClientEventWebSocketHandler.class);
         accounts=mock(AccountEmailService.class);mail=mock(com.myharness.codex.service.mail.AccountMailService.class);
-        service=new UserManagementService(rbac,users,devices,experts,encoder,mock(AuthorizationService.class),sockets,new ObjectMapper(),accounts,mail);
+        sessions=mock(RedisLoginSessionStore.class);
+        service=new UserManagementService(rbac,users,devices,experts,encoder,mock(AuthorizationService.class),sockets,new ObjectMapper(),accounts,mail,sessions);
         UserContext.set(new UserPrincipal(1L,"admin@example.test","Administrator"));TransactionSynchronizationManager.initSynchronization();
         when(rbac.lockAdministratorRole()).thenReturn(1L);
         target=new SysUserPO();target.setId(2L);target.setEmail("normal@example.test");target.setDisplayName("Normal");target.setStatus("ENABLED");target.setPasswordHash("test-hash");target.setActivatedAt(java.time.LocalDateTime.of(2026,9,10,0,0));target.setEmailVerifiedAt(target.getActivatedAt());
@@ -45,9 +47,9 @@ class UserManagementServiceTest {
         when(rbac.deviceIds(2L)).thenReturn(List.of(7L));
         service.assignDevices(2L,new AssignDevicesDTO(List.of(8L,9L)));
         verify(rbac).revokeDevices(2L);verify(rbac).assignDevice(2L,8L,1L);verify(rbac).assignDevice(2L,9L,1L);verify(rbac).revokeTokens(2L);
-        verify(sockets,never()).disconnectUser(any());
+        verify(sockets,never()).disconnectBeforeVersion(any(),anyLong(),anyBoolean());
         TransactionSynchronizationManager.getSynchronizations().forEach(s->s.afterCommit());
-        verify(sockets).disconnectUser(2L);
+        verify(sockets).disconnectBeforeVersion(2L,1L,false);
         var detail=ArgumentCaptor.forClass(String.class);verify(rbac).audit(eq(1L),eq("USER_DEVICE_ASSIGN"),eq("USER"),eq("2"),detail.capture());
         assertTrue(detail.getValue().contains("before"));assertTrue(detail.getValue().contains("after"));
     }
@@ -88,6 +90,33 @@ class UserManagementServiceTest {
         assertEquals(ErrorCode.UNAUTHORIZED,error.getErrorCode());
         verify(rbac,never()).changePassword(any(),any(),anyBoolean());
         verifyNoInteractions(accounts,mail);
+    }
+
+    @Test void delayedLogoutCannotRevokeANewerLogin() {
+        var old=new RedisLoginSessionStore.Session(1,"old",java.time.Instant.now().plusSeconds(7200).getEpochSecond());
+        UserContext.set(new UserPrincipal(2L,target.getEmail(),target.getDisplayName(),old));
+        target.setTokenVersion(2);
+        assertEquals(ErrorCode.UNAUTHORIZED,assertThrows(BusinessException.class,service::logout).getErrorCode());
+        verify(rbac,never()).revokeTokens(any());verifyNoInteractions(sessions,sockets);
+    }
+
+    @Test void logoutDeletesOnlyItsAuthenticatedSessionAndClosesAfterCommit() {
+        var current=new RedisLoginSessionStore.Session(3,"current",java.time.Instant.now().plusSeconds(7200).getEpochSecond());
+        target.setTokenVersion(3);
+        UserContext.set(new UserPrincipal(2L,target.getEmail(),target.getDisplayName(),current));
+        when(sessions.read(2L)).thenReturn(current);when(sessions.revoke(2L,current)).thenReturn(true);
+        service.logout();
+        verify(sessions).revoke(2L,current);verify(rbac).revokeTokens(2L);verifyNoInteractions(sockets);
+        TransactionSynchronizationManager.getSynchronizations().forEach(s->s.afterCommit());
+        verify(sockets).disconnectBeforeVersion(2L,4L,false);
+    }
+
+    @Test void replacedLoginCannotChangePasswordAfterWaitingForUserLock() {
+        var old=new RedisLoginSessionStore.Session(1,"old",java.time.Instant.now().plusSeconds(7200).getEpochSecond());
+        UserContext.set(new UserPrincipal(2L,target.getEmail(),target.getDisplayName(),old));target.setTokenVersion(2);
+        assertEquals(ErrorCode.UNAUTHORIZED,assertThrows(BusinessException.class,
+                ()->service.changeOwnPassword(new ChangePasswordDTO("CurrentPassword123","NewPassword456"))).getErrorCode());
+        verify(rbac,never()).changePassword(any(),any(),anyBoolean());
     }
 
     @Test void pendingAdministratorDoesNotCountAsTheLastUsableAdministrator() {

@@ -197,7 +197,7 @@ public class AccountEmailService {
         revokeChallenges(user.getId());
         initialization.complete(user.getId(), now);
         audit("ANONYMOUS", null, "USER_ACTIVATE", user.getId());
-        disconnectAfterCommit(user.getId());
+        disconnectAfterCommit(user.getId(), user.getTokenVersion() + 1);
     }
 
     /** Verification errors are thrown after commit, so incorrect attempts cannot roll back their own counter. */
@@ -235,7 +235,7 @@ public class AccountEmailService {
         revokeChallenges(user.getId());
         mail.enqueuePasswordChanged(user, "password-reset:" + challenge.getId());
         audit("ANONYMOUS", null, "USER_PASSWORD_RECOVERY", user.getId());
-        disconnectAfterCommit(user.getId());
+        disconnectAfterCommit(user.getId(), user.getTokenVersion() + 1);
         return null;
     }
 
@@ -324,9 +324,9 @@ public class AccountEmailService {
     private void audit(String type, Long operator, String action, Long userId) {
         challenges.audit(type, operator, action, String.valueOf(userId));
     }
-    private void disconnectAfterCommit(Long userId) {
+    private void disconnectAfterCommit(Long userId, long version) {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override public void afterCommit() { sockets.disconnectUser(userId); }
+            @Override public void afterCommit() { sockets.disconnectBeforeVersion(userId, version, false); }
         });
     }
 }

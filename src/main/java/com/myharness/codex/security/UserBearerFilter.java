@@ -18,13 +18,14 @@ public class UserBearerFilter extends OncePerRequestFilter {
     private final UserAuthenticationService authentication;
     private final AuthorizationService authorization;
     private final ObjectMapper json;
-    private static final Set<String> PASSWORD_ROUTES=Set.of("/api/v1/auth/profile","/api/v1/auth/change-password","/api/v1/auth/logout");
+    private static final Set<String> PASSWORD_ROUTES=Set.of("/api/v1/auth/profile","/api/v1/auth/change-password","/api/v1/auth/logout","/api/v1/auth/activity");
     public UserBearerFilter(UserAuthenticationService authentication,AuthorizationService authorization,ObjectMapper json) {
         this.authentication=authentication; this.authorization=authorization; this.json=json;
     }
     @Override protected void doFilterInternal(HttpServletRequest request,HttpServletResponse response,FilterChain chain)
             throws ServletException,IOException {
         String path=request.getServletPath();
+        if (path.startsWith("/api/v1/auth/")) response.setHeader("Cache-Control","no-store");
         // These endpoints use Enrollment/Device credentials, or one-time WebSocket tickets.
         if(!path.startsWith("/api/v1/") || PublicAuthEndpoints.allows(request.getMethod(), path) || path.startsWith("/api/v1/agent/")) {
             chain.doFilter(request,response); return;
@@ -32,9 +33,12 @@ public class UserBearerFilter extends OncePerRequestFilter {
         try {
             String header=request.getHeader("Authorization");
             if(header==null || !header.startsWith("Bearer ")) throw new BusinessException(ErrorCode.UNAUTHORIZED);
-            SysUserPO user=authentication.authenticate(header.substring(7).trim());
+            var authenticated=authentication.authenticateSession(header.substring(7).trim());
+            SysUserPO user=authenticated.user();
             if(user.isMustChangePassword() && !PASSWORD_ROUTES.contains(path)) throw new BusinessException(ErrorCode.PASSWORD_CHANGE_REQUIRED);
-            UserPrincipal principal=new UserPrincipal(user.getId(),user.getEmail(),user.getDisplayName());
+            if ("1".equals(request.getHeader("X-Harness-Activity")) && !path.startsWith("/api/v1/auth/"))
+                authenticated=authentication.recordActivity(authenticated);
+            UserPrincipal principal=new UserPrincipal(user.getId(),user.getEmail(),user.getDisplayName(),authenticated.session());
             var authorities=authorization.permissions(user.getId()).stream().map(SimpleGrantedAuthority::new).toList();
             SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(principal,null,authorities));
             UserContext.set(principal);

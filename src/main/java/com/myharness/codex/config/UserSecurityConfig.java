@@ -15,7 +15,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class UserSecurityConfig {
     @Bean
     SecurityFilterChain userSecurity(HttpSecurity http,UserAuthenticationService authentication,AuthorizationService authorization,ObjectMapper json) throws Exception {
-        // Human HTTP API uses explicit Bearer credentials, never cookies.
+        // Business APIs use Bearer credentials; refresh cookies have explicit JSON/header/Origin guards.
         http.csrf(csrf->csrf.disable()).sessionManagement(s->s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .formLogin(f->f.disable()).httpBasic(b->b.disable()).logout(l->l.disable())
             .authorizeHttpRequests(a->a
@@ -24,7 +24,7 @@ public class UserSecurityConfig {
                 .requestMatchers(HttpMethod.POST, PublicAuthEndpoints.postPaths()).permitAll()
                 .requestMatchers(HttpMethod.POST,"/api/v1/agent/enroll").permitAll()
                 .requestMatchers(HttpMethod.GET,"/api/v1/agent/skill-versions/*/download","/api/v1/agent/turns/*/attachments","/ws/client","/ws/agent").permitAll()
-                .requestMatchers("/api/v1/auth/profile","/api/v1/auth/logout","/api/v1/auth/change-password","/api/v1/auth/socket-ticket").authenticated()
+                .requestMatchers("/api/v1/auth/profile","/api/v1/auth/logout","/api/v1/auth/change-password","/api/v1/auth/socket-ticket","/api/v1/auth/activity").authenticated()
                 .requestMatchers("/api/v1/users/**","/api/v1/roles").hasAuthority("system:user:manage")
                 .requestMatchers("/api/v1/devices/available").hasAuthority("workspace:use")
                 .requestMatchers("/api/v1/admin/model-configurations/**","/api/v1/devices/*/model-assignment").hasAuthority("model:manage")

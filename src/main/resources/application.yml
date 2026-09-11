@@ -95,6 +95,13 @@ harness:
     jwt-secret: RcDzEgUftcD1n6LiBJsWxtoAgTQ+YK5VCQ189E/FpAE=
     model-secret-key: tayfgtDT/ug755+MD4KYIXBu7/fXS3UoQTbogvBWWkg=
     jwt-expire-minutes: 120
+    session-idle-minutes: 120
+    session-absolute-days: 7
+    refresh-before-seconds: 600
+    refresh-replay-grace-seconds: 10
+    # Production defaults to Secure. Set false only for loopback HTTP development.
+    refresh-cookie-secure: ${HARNESS_REFRESH_COOKIE_SECURE:true}
+    refresh-allowed-origins: ${HARNESS_REFRESH_ALLOWED_ORIGINS:http://localhost:8010,http://127.0.0.1:8010}
   bootstrap-admin:
     enabled: true
     # 首次空库启动创建待激活管理员；永久初始化记录阻止重复创建或补权。

@@ -1,29 +1,19 @@
 package com.myharness.codex.entity.vo;
 
-public class LoginVO {
+public class LoginVO extends SessionTokenVO {
 
-    private final String accessToken;
-    private final String tokenType;
-    private final long expiresInSeconds;
     private final UserProfileVO user;
 
     public LoginVO(String accessToken, long expiresInSeconds, UserProfileVO user) {
-        this.accessToken = accessToken;
-        this.tokenType = "Bearer";
-        this.expiresInSeconds = expiresInSeconds;
+        super(accessToken,expiresInSeconds,0,null,0,0,600,0,null);
         this.user = user;
     }
 
-    public String getAccessToken() {
-        return accessToken;
-    }
-
-    public String getTokenType() {
-        return tokenType;
-    }
-
-    public long getExpiresInSeconds() {
-        return expiresInSeconds;
+    public LoginVO(SessionTokenVO credentials,UserProfileVO user) {
+        super(credentials.getAccessToken(),credentials.getExpiresInSeconds(),credentials.getExpiresAt(),
+                credentials.getSessionId(),credentials.getSessionExpiresAt(),credentials.getIdleExpiresAt(),
+                credentials.getRefreshBeforeSeconds(),credentials.getCredentialGeneration(),credentials.getRefreshCookieValue());
+        this.user=user;
     }
 
     public UserProfileVO getUser() {

@@ -33,15 +33,25 @@
         LIMIT 1
     </select>
 
+    <select id="lockByEmail" resultMap="sysUserResultMap" flushCache="true" useCache="false">
+        SELECT * FROM sys_user WHERE email = #{email} LIMIT 1 FOR UPDATE
+    </select>
+    <select id="lockById" resultMap="sysUserResultMap" flushCache="true" useCache="false">
+        SELECT * FROM sys_user WHERE id = #{id} FOR UPDATE
+    </select>
+    <update id="revokeVersion">
+        UPDATE sys_user SET token_version=token_version+1 WHERE id=#{id} AND token_version=#{expectedVersion}
+    </update>
+
     <insert id="insert" parameterType="com.myharness.codex.entity.po.SysUserPO"
             useGeneratedKeys="true" keyProperty="id">
         INSERT INTO sys_user (email, password_hash, display_name, status, must_change_password, email_verified_at, activated_at)
         VALUES (#{email}, #{passwordHash}, #{displayName}, #{status}, #{mustChangePassword}, #{emailVerifiedAt}, #{activatedAt})
     </insert>
 
-    <update id="updateLastLoginAt">
+    <update id="advanceLogin">
         UPDATE sys_user
-        SET last_login_at = #{lastLoginAt}
-        WHERE id = #{id}
+        SET token_version = token_version + 1, last_login_at = #{lastLoginAt}
+        WHERE id = #{id} AND token_version = #{expectedVersion}
     </update>
 </mapper>
