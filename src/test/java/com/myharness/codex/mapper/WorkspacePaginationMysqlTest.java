@@ -27,7 +27,7 @@ class WorkspacePaginationMysqlTest {
     private static final String FIXTURES="""
             WITH codex_project AS (
                 SELECT id,IF(id=125,8,7) user_id,IF(id=124,11,10) device_id,20 workspace_id,
-                       CONCAT('Project ',id) project_name,'ACTIVE' status,'WINDOWS_PROJECT_PROFILE' isolation_mode,
+                       CONCAT('Project ',id) project_name,'ACTIVE' status,'LINUX_PROJECT_PROFILE_V1' isolation_mode,
                        '2026-09-09 12:00:00' created_at,'2026-09-09 12:00:00' updated_at,NULL request_key
                 FROM (__PROJECT_IDS__) numbers
             ), agent_device AS (

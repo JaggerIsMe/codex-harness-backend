@@ -48,6 +48,7 @@ public class ProjectServiceImpl implements ProjectService {
                 devices.insertCreatingWorkspace(workspace);
                 ProjectPO value=new ProjectPO();value.setUserId(userId);value.setDeviceId(device.getId());
                 value.setWorkspaceId(workspace.getId());value.setProjectName(dto.getProjectName().trim());value.setRequestKey(requestKey);
+                value.setIsolationMode(device.getIsolationMode());
                 projects.insert(value);return value;
             });
         } catch(DuplicateKeyException ex) {
@@ -95,8 +96,8 @@ public class ProjectServiceImpl implements ProjectService {
         AgentDevicePO device=devices.selectById(id);
         if(device==null || !"ONLINE".equals(device.getStatus()) || !gateway.isOnline(device.getDeviceCode()))
             throw new BusinessException(ErrorCode.AGENT_OFFLINE);
-        if(!"WINDOWS_PROJECT_PROFILE".equals(device.getIsolationMode()))
-            throw new BusinessException(ErrorCode.CONFLICT,"请升级 Agent 并启用 Windows 项目读取隔离");
+        if(!"LINUX_PROJECT_PROFILE_V1".equals(device.getIsolationMode()) && !"WINDOWS_LPAC_V1".equals(device.getIsolationMode()))
+            throw new BusinessException(ErrorCode.CONFLICT,"当前设备尚未通过读取隔离自检，请配置 Windows 原生隔离或 Linux 隔离 Agent");
         return device;
     }
     /** Runs only after the project + Workspace transaction committed. Send failures remain inspectable/retryable. */

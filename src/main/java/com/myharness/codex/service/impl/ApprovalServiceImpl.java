@@ -36,13 +36,23 @@ public class ApprovalServiceImpl implements ApprovalService {
         ApprovalRequestPO approval=mapper.selectOwnedById(approvalId,operatorId);
         if (approval==null) throw new BusinessException(ErrorCode.NOT_FOUND,"审批不存在");
         access.requireDevice(operatorId,approval.getDeviceId());
-        if ("ACCEPT_FOR_SESSION".equals(decision) && !access.hasPermission(operatorId,"device:manage"))
-            throw new BusinessException(ErrorCode.FORBIDDEN,"普通用户仅可批准当前请求");
+        if ("ACCEPT_FOR_SESSION".equals(decision))
+            throw new BusinessException(ErrorCode.INVALID_REQUEST,"审批仅支持本次决定，不支持本会话批准");
+        com.fasterxml.jackson.databind.JsonNode answers=null;
+        if("MCP_TOOL_CALL".equals(approval.getApprovalType())&&"ACCEPT".equals(decision)) {
+            try { answers=ToolQuestionAnswers.validate(new com.fasterxml.jackson.databind.ObjectMapper().readTree(approval.getPayload()),dto.getAnswers()); }
+            catch(com.fasterxml.jackson.core.JsonProcessingException e) {throw new BusinessException(ErrorCode.INVALID_REQUEST,"原始问题格式无效");}
+        } else if(dto.getAnswers()!=null&&!dto.getAnswers().isNull())
+            throw new BusinessException(ErrorCode.INVALID_REQUEST,"当前决定不接受问题答案");
         if (!gateway.isOnline(approval.getDeviceCode())) throw new BusinessException(ErrorCode.AGENT_OFFLINE);
         if (mapper.decide(approvalId,status,operatorId,LocalDateTime.now())!=1)
             throw new BusinessException(ErrorCode.CONFLICT,"审批已被处理");
         Map<String,Object> payload=new LinkedHashMap<>(); payload.put("requestId",approval.getRemoteRequestId()); payload.put("decision",decision);
-        gateway.send(approval.getDeviceCode(),new AgentCommand("RESOLVE_APPROVAL",String.valueOf(approvalId),payload));
+        String messageId=java.util.UUID.randomUUID().toString();
+        if(mapper.recordDispatch(approvalId,messageId)!=1)throw new BusinessException(ErrorCode.CONFLICT,"审批提交状态已变化");
+        payload.put("decisionMessageId",messageId);
+        if(answers!=null)payload.put("answers",answers);
+        gateway.send(approval.getDeviceCode(),new AgentCommand("RESOLVE_APPROVAL",String.valueOf(approvalId),payload,messageId));
         return mapper.selectOwnedById(approvalId,operatorId);
     }
 }

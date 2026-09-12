@@ -29,7 +29,7 @@ public interface ProjectMapper {
             PROJECT_FROM;
 
     @Insert("INSERT INTO codex_project(user_id,device_id,workspace_id,project_name,status,isolation_mode,request_key) " +
-            "VALUES(#{userId},#{deviceId},#{workspaceId},#{projectName},'ACTIVE','WINDOWS_PROJECT_PROFILE',#{requestKey})")
+            "VALUES(#{userId},#{deviceId},#{workspaceId},#{projectName},'ACTIVE',#{isolationMode},#{requestKey})")
     @Options(useGeneratedKeys=true,keyProperty="id")
     int insert(ProjectPO project);
 

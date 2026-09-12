@@ -246,6 +246,7 @@ public class ConversationServiceImpl implements ConversationService {
 
     @Override public List<ApprovalVO> getApprovals(Long projectId,Long conversationId,Long operatorId) {
         requireOwned(projectId,conversationId,operatorId);
+        approvalMapper.cancelInactive(conversationId,LocalDateTime.now());
         return approvalMapper.selectByConversation(conversationId).stream().map(value -> new ApprovalVO(value,objectMapper)).collect(Collectors.toList());
     }
 
@@ -269,8 +270,8 @@ public class ConversationServiceImpl implements ConversationService {
     private AgentDevicePO requireOnline(Long deviceId) {
         AgentDevicePO device=deviceMapper.selectById(deviceId);
         if (device==null || "DISABLED".equals(device.getStatus())) throw new BusinessException(ErrorCode.NOT_FOUND,"设备不存在或已禁用");
-        if (!"WINDOWS_PROJECT_PROFILE".equals(device.getIsolationMode()))
-            throw new BusinessException(ErrorCode.CONFLICT,"请升级 Agent 以启用项目读取隔离");
+        if (!"LINUX_PROJECT_PROFILE_V1".equals(device.getIsolationMode()) && !"WINDOWS_LPAC_V1".equals(device.getIsolationMode()))
+            throw new BusinessException(ErrorCode.CONFLICT,"当前设备尚未通过读取隔离自检，请配置 Windows 原生隔离或 Linux 隔离 Agent");
         if (!gateway.isOnline(device.getDeviceCode())) throw new BusinessException(ErrorCode.AGENT_OFFLINE);
         return device;
     }

@@ -36,7 +36,7 @@ class AttachmentTurnTest {
         conversation.setDeviceId(4L);conversation.setDeviceCode("device");conversation.setWorkspaceName("workspace");conversation.setCodexThreadId("thread");
         when(mapper.selectOwnedConversation(2L,3L,1L)).thenReturn(conversation);when(mapper.lockConversation(3L)).thenReturn(conversation);
         var project=new ProjectPO();project.setStatus("ACTIVE");project.setWorkspaceStatus("ENABLED");project.setRootPath("D:/project");when(projects.selectOwned(2L,1L)).thenReturn(project);
-        device=new AgentDevicePO();device.setDeviceCode("device");device.setStatus("ONLINE");device.setIsolationMode("WINDOWS_PROJECT_PROFILE");device.setConversationAttachments(true);
+        device=new AgentDevicePO();device.setDeviceCode("device");device.setStatus("ONLINE");device.setIsolationMode("LINUX_PROJECT_PROFILE_V1");device.setConversationAttachments(true);
         when(devices.selectById(4L)).thenReturn(device);when(gateway.isOnline("device")).thenReturn(true);
         requests=new HashMap<>();
         when(mapper.byClientRequest(eq(3L),anyString())).thenAnswer(i -> requests.get(i.getArgument(1)));

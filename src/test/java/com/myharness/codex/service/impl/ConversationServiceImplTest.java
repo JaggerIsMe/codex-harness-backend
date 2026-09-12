@@ -122,6 +122,26 @@ class ConversationServiceImplTest {
     }
 
     @Test
+    void refusesOldWindowsThreadBeforeCreatingOrDispatchingTurn() {
+        var project=new com.myharness.codex.entity.po.ProjectPO();
+        project.setId(5L);project.setDeviceId(2L);project.setStatus("ACTIVE");project.setWorkspaceStatus("ENABLED");project.setRootPath("D:/allowed");
+        when(projectMapper.selectOwned(5L,3L)).thenReturn(project);
+        var conversation=conversation(2L,3L,"旧会话");conversation.setCodexThreadId("old-thread");
+        when(conversationMapper.selectOwnedConversation(5L,2L,3L)).thenReturn(conversation);
+        when(conversationMapper.lockConversation(2L)).thenReturn(conversation);
+        var device=new com.myharness.codex.entity.po.AgentDevicePO();
+        device.setStatus("ONLINE");device.setIsolationMode("WINDOWS_PROJECT_PROFILE");
+        when(deviceMapper.selectById(2L)).thenReturn(device);
+        when(transactions.execute(org.mockito.ArgumentMatchers.any())).thenAnswer(invocation ->
+                ((org.springframework.transaction.support.TransactionCallback<?>)invocation.getArgument(0)).doInTransaction(null));
+        var request=new com.myharness.codex.entity.dto.StartTurnDTO();request.setMessage("读取外部文件");
+        org.junit.jupiter.api.Assertions.assertThrows(com.myharness.codex.exception.BusinessException.class,
+                ()->service.startTurn(5L,2L,request,3L));
+        org.mockito.Mockito.verify(conversationMapper,org.mockito.Mockito.never()).insertTurn(org.mockito.ArgumentMatchers.any());
+        org.mockito.Mockito.verifyNoInteractions(gateway);
+    }
+
+    @Test
     void sendsPersistedConversationBindingWithEveryTurnForAgentRecovery() {
         var project=new com.myharness.codex.entity.po.ProjectPO();
         project.setId(5L);project.setDeviceId(2L);project.setStatus("ACTIVE");project.setWorkspaceStatus("ENABLED");project.setRootPath("D:/allowed");
@@ -132,7 +152,7 @@ class ConversationServiceImplTest {
         conversation.setDeviceCode("device-1");
         when(conversationMapper.selectOwnedConversation(5L, 2L, 3L)).thenReturn(conversation);
         var device = new com.myharness.codex.entity.po.AgentDevicePO();
-        device.setDeviceCode("device-1"); device.setStatus("ONLINE"); device.setIsolationMode("WINDOWS_PROJECT_PROFILE");
+        device.setDeviceCode("device-1"); device.setStatus("ONLINE"); device.setIsolationMode("LINUX_PROJECT_PROFILE_V1");
         when(deviceMapper.selectById(2L)).thenReturn(device);
         when(gateway.isOnline("device-1")).thenReturn(true);
         var turn = new ConversationTurnPO();

@@ -39,7 +39,7 @@ class ExpertDatabaseTest {
             jdbc.update("INSERT INTO sys_user(id,email,password_hash,display_name,must_change_password) VALUES(901,'expert-test-admin@example.test','unused','Test',0),(902,'expert-test-other@example.test','unused','Other',0)");
             jdbc.update("INSERT INTO sys_user_role SELECT 901,id FROM sys_role WHERE role_code='SYS_ADMIN'");
             jdbc.update("INSERT INTO sys_user_role SELECT 902,id FROM sys_role WHERE role_code='USER'");
-            jdbc.update("INSERT INTO agent_device(id,device_code,device_name,token_hash,status,isolation_mode,project_experts) VALUES(901,'expert-test-device','Test',REPEAT('a',64),'ONLINE','WINDOWS_PROJECT_PROFILE',1),(902,'expert-other-device','Other',REPEAT('b',64),'ONLINE','WINDOWS_PROJECT_PROFILE',1)");
+            jdbc.update("INSERT INTO agent_device(id,device_code,device_name,token_hash,status,isolation_mode,project_experts) VALUES(901,'expert-test-device','Test',REPEAT('a',64),'ONLINE','LINUX_PROJECT_PROFILE_V1',1),(902,'expert-other-device','Other',REPEAT('b',64),'ONLINE','LINUX_PROJECT_PROFILE_V1',1)");
             jdbc.update("INSERT INTO agent_workspace(id,device_id,workspace_name,root_path) VALUES(901,901,'expert-test','D:/test/expert'),(902,901,'other-project','D:/test/other')");
             jdbc.update("INSERT INTO codex_project(id,user_id,device_id,workspace_id,project_name) VALUES(901,901,901,901,'Test project'),(902,902,901,902,'Other project')");
             jdbc.update("INSERT INTO user_device_assignment(user_id,device_id,assigned_by) VALUES(901,901,901),(902,901,901)");

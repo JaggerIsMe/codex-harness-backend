@@ -125,6 +125,7 @@ public class AgentEventServiceImpl implements AgentEventService {
     public void disconnected(Long deviceId) {
         deviceMapper.markOffline(deviceId);
         for (com.myharness.codex.entity.po.ConversationTurnPO turn:conversationMapper.selectActiveTurnsForDevice(deviceId)) {
+            approvalMapper.cancelTurn(turn.getId(),deviceId,LocalDateTime.now());
             streams.finish(deviceId,turn.getConversationId(),turn.getId(),"FAILED",null);
             ConversationPO c=conversationMapper.selectConversation(turn.getConversationId());
             if(c!=null) afterFileCommit(() -> workspaceFiles.refreshProject(c.getProjectId(),c.getUserId()));
@@ -229,9 +230,17 @@ public class AgentEventServiceImpl implements AgentEventService {
     }
     private void approvalResolved(Long deviceId, JsonNode payload) {
         ApprovalRequestPO approval=approvalMapper.selectRemote(deviceId,text(payload,"requestId",128));
-        if (approval!=null) conversationMapper.resumeTurn(approval.getTurnId(),approval.getConversationId());
+        if (approval!=null) {
+            if(payload.hasNonNull("decisionMessageId") && approvalMapper.acknowledgeDispatch(approval.getId(),text(payload,"decisionMessageId",36))!=1) return;
+            if(payload instanceof com.fasterxml.jackson.databind.node.ObjectNode object) {
+                object.put("conversationId",approval.getConversationId());object.put("turnId",approval.getTurnId());
+            }
+            if(approvalMapper.pendingForTurn(approval.getTurnId())==0)
+                conversationMapper.resumeTurn(approval.getTurnId(),approval.getConversationId());
+        }
     }
     private void terminal(Long deviceId, JsonNode payload, String status, String failureCode, LocalDateTime now) {
+        approvalMapper.cancelTurn(id(payload,"turnId"),deviceId,now);
         streams.finish(deviceId,id(payload,"conversationId"),id(payload,"turnId"),status,
                 payload.hasNonNull("lastEventSeq") ? payload.get("lastEventSeq").asLong() : null);
         conversationMapper.finishTurn(id(payload,"turnId"),id(payload,"conversationId"),deviceId,status,failureCode,
@@ -246,7 +255,17 @@ public class AgentEventServiceImpl implements AgentEventService {
             afterFileCommit(() -> workspaceFiles.commandError(deviceId,envelope.getCorrelationId(),command,code,optionalText(payload,"message",1000)));
             return;
         }
-        if ("START_THREAD".equals(command)) conversationMapper.failConversation(parseId(envelope.getCorrelationId(),"conversation correlationId"),deviceId,now);
+        if ("RESOLVE_APPROVAL".equals(command)) {
+            ApprovalRequestPO approval=approvalMapper.selectById(parseId(envelope.getCorrelationId(),"approval correlationId"));
+            if(approval==null||!deviceId.equals(approval.getDeviceId()))throw new IllegalArgumentException("Approval device mismatch");
+            if(payload instanceof com.fasterxml.jackson.databind.node.ObjectNode object) {
+                object.put("conversationId",approval.getConversationId());object.put("turnId",approval.getTurnId());
+            }
+            // Only an explicit pre-dispatch validation failure is safe to retry automatically.
+            if("APPROVAL_INPUT_INVALID".equals(code) && approvalMapper.rejectDispatch(approval.getId(),deviceId,text(payload,"commandMessageId",36))!=1
+                    && payload instanceof com.fasterxml.jackson.databind.node.ObjectNode object) object.put("staleApprovalResponse",true);
+        }
+        else if ("START_THREAD".equals(command)) conversationMapper.failConversation(parseId(envelope.getCorrelationId(),"conversation correlationId"),deviceId,now);
         else if ("START_TURN".equals(command)) {
             Long turnId=parseId(envelope.getCorrelationId(),"turn correlationId");
             com.myharness.codex.entity.po.ConversationTurnPO turn=conversationMapper.selectTurn(turnId);
@@ -298,6 +317,7 @@ public class AgentEventServiceImpl implements AgentEventService {
     }
 
     private Long conversationOwner(Long deviceId,AgentEventType type,AgentProtocolEnvelope envelope,JsonNode payload) {
+        if(type==AgentEventType.ERROR && payload.path("staleApprovalResponse").asBoolean(false))return null;
         Long conversationId=null;
         switch (type) {
             case THREAD_STARTED:
@@ -316,7 +336,11 @@ public class AgentEventServiceImpl implements AgentEventService {
                 break;
             case ERROR:
                 String command=optionalText(payload,"commandType",32);
-                if ("START_THREAD".equals(command)) conversationId=parseId(envelope.getCorrelationId(),"conversation correlationId");
+                if ("RESOLVE_APPROVAL".equals(command)) {
+                    ApprovalRequestPO failed=approvalMapper.selectById(parseId(envelope.getCorrelationId(),"approval correlationId"));
+                    if(failed!=null&&deviceId.equals(failed.getDeviceId()))conversationId=failed.getConversationId();
+                }
+                else if ("START_THREAD".equals(command)) conversationId=parseId(envelope.getCorrelationId(),"conversation correlationId");
                 else if ("START_TURN".equals(command)) {
                     com.myharness.codex.entity.po.ConversationTurnPO turn=conversationMapper.selectTurn(parseId(envelope.getCorrelationId(),"turn correlationId"));
                     if (turn!=null) conversationId=turn.getConversationId();
@@ -344,7 +368,7 @@ public class AgentEventServiceImpl implements AgentEventService {
                 return true;
             case ERROR:
                 String command=optionalText(payload,"commandType",32);
-                return "START_THREAD".equals(command) || "START_TURN".equals(command);
+                return "START_THREAD".equals(command) || "START_TURN".equals(command) || "RESOLVE_APPROVAL".equals(command);
             default:
                 return false;
         }

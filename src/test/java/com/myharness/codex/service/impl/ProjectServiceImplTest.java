@@ -22,7 +22,7 @@ class ProjectServiceImplTest {
         projects=mock(ProjectMapper.class);devices=mock(AgentDeviceMapper.class);access=mock(AuthorizationService.class);gateway=mock(AgentCommandGateway.class);
         manager=mock(PlatformTransactionManager.class);when(manager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
         service=new ProjectServiceImpl(projects,devices,access,gateway,new TransactionTemplate(manager));
-        AgentDevicePO device=new AgentDevicePO();device.setId(2L);device.setDeviceCode("device-2");device.setStatus("ONLINE");device.setIsolationMode("WINDOWS_PROJECT_PROFILE");
+        AgentDevicePO device=new AgentDevicePO();device.setId(2L);device.setDeviceCode("device-2");device.setStatus("ONLINE");device.setIsolationMode("LINUX_PROJECT_PROFILE_V1");
         when(devices.selectById(2L)).thenReturn(device);when(gateway.isOnline("device-2")).thenReturn(true);
         AgentWorkspaceRootPO root=new AgentWorkspaceRootPO();root.setRootName("allowed");when(devices.selectWorkspaceRoots(2L)).thenReturn(List.of(root));
         doAnswer(i->{workspace=i.getArgument(0);workspace.setId(4L);workspace.setStatus("CREATING");return 1;}).when(devices).insertCreatingWorkspace(any());
@@ -55,9 +55,15 @@ class ProjectServiceImplTest {
         verify(devices,never()).insertCreatingWorkspace(any());verify(gateway,never()).send(any(),any());
     }
     @Test void legacyAgentCannotProvisionPrivateProject() {
-        devices.selectById(2L).setIsolationMode("WINDOWS_ELEVATED");
+        devices.selectById(2L).setIsolationMode("WINDOWS_PROJECT_PROFILE");
         assertThrows(BusinessException.class,()->service.createProject(dto(),3L));
         verify(devices,never()).insertCreatingWorkspace(any());verify(gateway,never()).send(any(),any());
+    }
+    @Test void nativeWindowsDevicePersistsItsVerifiedIsolationMode() {
+        devices.selectById(2L).setIsolationMode("WINDOWS_LPAC_V1");
+        service.createProject(dto(),3L);
+        assertEquals("WINDOWS_LPAC_V1",project.getIsolationMode());
+        verify(gateway).send(eq("device-2"),any());
     }
     @Test void sameMachineAndDisplayNameStillAllocateDifferentUserDirectories() {
         service.createProject(dto(),3L);String first=workspace.getWorkspaceName();
