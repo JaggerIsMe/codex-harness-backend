@@ -146,7 +146,8 @@ public class SkillImportService {
                     SkillImportVO.Result result = publish(current.preview().request().mode(), item, upload, user);
                     append(key, current, result);
                     // Archive becomes the immutable version file. Only its staging reference is consumed.
-                    if (result.status().equals("SKIPPED")) records.expire(item.uploadId(), LocalDateTime.now().minusSeconds(1));
+                    if (!upload.path().equals(skills.selectVersion(result.versionId()).getStoragePath()))
+                        records.expire(item.uploadId(), LocalDateTime.now().minusSeconds(1));
                     else records.delete(item.uploadId());
                 });
             } catch (RuntimeException error) {
@@ -196,6 +197,7 @@ public class SkillImportService {
         SkillPO skill = mode == SkillImportDTO.Mode.CREATE ? skills.selectSkillByName(SkillArchive.name(item.skillName()))
                 : item.skillId() == null ? null : skills.selectSkill(item.skillId());
         SkillArchive.description(item.description());
+        SkillArchive.tag(item.tag());
         if (mode == SkillImportDTO.Mode.CREATE && skill != null) throw conflict("Skill 名称已存在，请使用批量更新");
         if (mode == SkillImportDTO.Mode.UPDATE && skill == null) throw conflict("请选择已有 Skill");
         List<SkillVersionPO> versions = skill == null ? List.of() : skills.selectVersions(skill.getId());
@@ -204,11 +206,12 @@ public class SkillImportService {
         if (duplicate != null && !duplicate.getSha256().equals(upload.sha256())) throw conflict("该版本已存在且文件内容不同");
         List<SkillVersionPO> active = versions.stream().filter(v -> "ACTIVE".equals(v.getStatus())).toList();
         List<SkillImportVO.Impact> impacts = duplicate != null ? List.of() : active.stream().flatMap(v -> records.impacts(v.getId()).stream()).toList();
-        String snapshot = write(List.of(upload.sha256(), item, skill == null ? "NEW" : List.of(skill.getId(), skill.getSkillName(), skill.getStatus()),
+        boolean tagChanged = skill != null && item.tag() != null && !SkillArchive.tag(item.tag()).equals(skill.getTag());
+        String snapshot = write(List.of(upload.sha256(), item, skill == null ? "NEW" : List.of(skill.getId(), skill.getSkillName(), skill.getStatus(), skill.getTag()),
                 versions.stream().map(v -> List.of(v.getId(),v.getVersion(),v.getStatus())).toList(), impacts));
         return new SkillImportVO.Item(item.itemId(), skill == null ? null : skill.getId(), skill == null ? item.skillName().trim() : skill.getSkillName(), version,
-                active.isEmpty() ? null : active.getFirst().getVersion(), duplicate == null ? "READY" : "SKIP",
-                duplicate == null ? "校验通过" : "同版本同文件，将跳过且保持激活状态", impacts, SecureDigests.sha256(snapshot));
+                active.isEmpty() ? null : active.getFirst().getVersion(), duplicate == null || tagChanged ? "READY" : "SKIP",
+                duplicate == null ? "校验通过" : tagChanged ? "同版本同文件，仅更新标签，版本状态保持不变" : "同版本同文件，将跳过且保持激活状态", impacts, SecureDigests.sha256(snapshot));
     }
 
     private SkillImportVO.Result publish(SkillImportDTO.Mode mode, SkillImportDTO.Item item, SkillImportStatePO.Upload upload, Long user) {
@@ -216,11 +219,15 @@ public class SkillImportService {
         if (mode == SkillImportDTO.Mode.CREATE) {
             SkillPO skill = new SkillPO(); skill.setSkillName(SkillArchive.name(item.skillName()));
             skill.setDescription(SkillArchive.description(item.description())); skill.setCreatedBy(user);
+            skill.setTag(SkillArchive.tag(item.tag()));
             skills.insertSkill(skill); skillId = skill.getId();
         } else {
-            skills.lockSkill(skillId);
+            SkillPO skill = skills.lockSkill(skillId);
+            boolean tagChanged = item.tag() != null && !SkillArchive.tag(item.tag()).equals(skill.getTag());
+            if (tagChanged) skills.updateTag(skillId, SkillArchive.tag(item.tag()));
             SkillVersionPO duplicate = records.versionByName(skillId, SkillArchive.version(item.version()));
-            if (duplicate != null) return new SkillImportVO.Result(item.itemId(), "SKIPPED", "相同版本和文件已存在", skillId, duplicate.getId());
+            if (duplicate != null) return new SkillImportVO.Result(item.itemId(), tagChanged ? "SUCCESS" : "SKIPPED",
+                    tagChanged ? "标签已更新，版本状态保持不变" : "相同版本和文件已存在", skillId, duplicate.getId());
         }
         SkillVersionPO version = new SkillVersionPO(); version.setSkillId(skillId); version.setVersion(SkillArchive.version(item.version()));
         version.setStoragePath(upload.path()); version.setSha256(upload.sha256()); version.setFileSize(upload.size()); version.setCreatedBy(user);

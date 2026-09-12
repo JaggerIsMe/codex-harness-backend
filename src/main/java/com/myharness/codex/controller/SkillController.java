@@ -6,6 +6,7 @@ import com.myharness.codex.entity.vo.ApiResponseVO;
 import com.myharness.codex.entity.vo.SkillFileVO;
 import com.myharness.codex.entity.vo.SkillVO;
 import com.myharness.codex.entity.vo.SkillVersionVO;
+import com.myharness.codex.entity.vo.PageVO;
 import com.myharness.codex.security.UserContext;
 import com.myharness.codex.service.SkillService;
 import org.springframework.core.io.Resource;
@@ -28,6 +29,16 @@ public class SkillController {
     public SkillController(SkillService service) { this.service = service; }
 
     @GetMapping
+    public ApiResponseVO<PageVO<SkillVO>> page(@RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String status, @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiResponseVO.success(service.page(keyword, status, page, size));
+    }
+    @GetMapping("/selected")
+    public ApiResponseVO<List<SkillVO>> selected(@RequestParam List<Long> ids) {
+        return ApiResponseVO.success(service.selected(ids));
+    }
+    @GetMapping("/options")
     public ApiResponseVO<List<SkillVO>> list(@RequestParam(required = false) String keyword,
                                              @RequestParam(required = false) String status) {
         return ApiResponseVO.success(service.list(keyword, status));
@@ -36,8 +47,9 @@ public class SkillController {
     public ApiResponseVO<SkillVO> get(@PathVariable Long skillId) { return ApiResponseVO.success(service.get(skillId)); }
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponseVO<SkillVO> create(@RequestParam String skillName,@RequestParam(required = false) String description,
+                                         @RequestParam(required = false) String tag,
                                          @RequestParam String version,@RequestPart("file") MultipartFile file) throws IOException {
-        return ApiResponseVO.success("Skill 上传成功", service.create(skillName, description, version, file,
+        return ApiResponseVO.success("Skill 上传成功", service.create(skillName, description, tag, version, file,
                 UserContext.requireCurrentUser().getId()));
     }
     @PostMapping(value = "/{skillId}/versions", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

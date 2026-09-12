@@ -13,8 +13,9 @@ public interface SkillExpertAssignmentMapper {
     void insert(SkillExpertAssignmentBatchPO value);
     @Select("SELECT * FROM skill_expert_assignment_batch WHERE id=#{id}") SkillExpertAssignmentBatchPO get(String id);
     @Update("UPDATE skill_expert_assignment_batch SET started=1,expires_at=DATE_ADD(NOW(),INTERVAL 7 DAY) WHERE id=#{id}") void start(String id);
-    @Select("SELECT * FROM skill_expert_assignment_batch WHERE owner_id=#{user} AND started=1 ORDER BY created_at DESC LIMIT #{size} OFFSET #{offset}")
-    List<SkillExpertAssignmentBatchPO> history(@Param("user") Long user,@Param("size") int size,@Param("offset") int offset);
+    @Select("SELECT * FROM skill_expert_assignment_batch WHERE started=1 ORDER BY created_at DESC,id DESC LIMIT #{size} OFFSET #{offset}")
+    List<SkillExpertAssignmentBatchPO> history(@Param("size") int size,@Param("offset") int offset);
+    @Select("SELECT display_name FROM sys_user WHERE id=#{id}") String ownerName(Long id);
     @Select("SELECT * FROM skill_expert_assignment_item WHERE batch_id=#{id} ORDER BY expert_id") List<SkillExpertAssignmentItemPO> results(String id);
     @Select("SELECT COUNT(*) FROM skill_expert_assignment_item WHERE batch_id=#{batchId} AND expert_id=#{expertId}")
     int processed(@Param("batchId") String batchId,@Param("expertId") Long expertId);

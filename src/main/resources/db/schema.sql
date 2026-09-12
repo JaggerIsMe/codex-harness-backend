@@ -209,6 +209,7 @@ CREATE TABLE IF NOT EXISTS `agent_event_message` (
 CREATE TABLE IF NOT EXISTS `skill` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
     `skill_name` VARCHAR(128) NOT NULL COMMENT 'Canonical Skill name',
+    `tag` VARCHAR(200) NOT NULL DEFAULT '' COMMENT 'User-entered Skill tag or remark',
     `description` VARCHAR(1000) NOT NULL DEFAULT '' COMMENT 'Skill description',
     `status` VARCHAR(16) NOT NULL DEFAULT 'ENABLED' COMMENT 'ENABLED/DISABLED',
     `created_by` BIGINT UNSIGNED NOT NULL COMMENT 'Creator user',

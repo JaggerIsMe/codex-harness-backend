@@ -112,19 +112,59 @@ public class ExpertSkillAssignmentService {
         return submission(id,user);
     }
     public Submission submission(String id,Long user) {
-        authorize(user);var batch=owned(id,user);var preview=read(batch.payload(),Preview.class);
+        authorize(user);var batch=assignments.get(id);
+        // Submitted operations are shared audit records; unsubmitted previews remain private.
+        if(batch==null || (!batch.started() && !Objects.equals(batch.ownerId(),user)))
+            throw new BusinessException(ErrorCode.NOT_FOUND,"分配记录不存在");
+        return submission(batch,user);
+    }
+    private Submission submission(SkillExpertAssignmentBatchPO batch,Long user) {
+        var preview=read(batch.payload(),Preview.class);
+        var targets=batchTargets(batch);
+        String id=batch.id();
         List<Result> items=assignments.results(id).stream().map(r -> read(r.payload(),Result.class)).toList();
-        return new Submission(id,preview.skillName(),preview.version(),batch.started(),items.size()==preview.items().size(),items,batchTargets(batch));
+        Map<Long,Result> byExpert=new HashMap<>();
+        for(var item:items) byExpert.put(item.expertId(),item);
+        long success=0,failed=0,skipped=0,bindingSuccess=0,bindingFailed=0,bindingSkipped=0;
+        for(var expected:preview.items()) {
+            var item=byExpert.get(expected.expertId());
+            if(item==null) continue;
+            switch(item.status()) {
+                case "SUCCESS" -> {
+                    success++;
+                    for(var target:targets) {
+                        String action=item.action();
+                        if(item.changes()!=null) action=item.changes().stream()
+                                .filter(change -> Objects.equals(change.skillId(),target.skillId()))
+                                .map(Change::action).findFirst().orElse(action);
+                        if("SKIP".equals(action)) bindingSkipped++; else bindingSuccess++;
+                    }
+                }
+                // A failed expert transaction rolls back every selected binding together.
+                case "FAILED" -> {failed++;bindingFailed+=targets.size();}
+                case "SKIPPED" -> {skipped++;bindingSkipped+=targets.size();}
+                default -> { /* Unrecognized or missing outcomes remain pending, never successful. */ }
+            }
+        }
+        long total=preview.items().size(),bindingTotal=total*targets.size();
+        var expertResults=new Counts(total,success,failed,skipped,total-success-failed-skipped);
+        var bindingResults=new Counts(bindingTotal,bindingSuccess,bindingFailed,bindingSkipped,
+                bindingTotal-bindingSuccess-bindingFailed-bindingSkipped);
+        boolean complete=expertResults.pendingCount()==0;
+        String ownerName=assignments.ownerName(batch.ownerId());
+        return new Submission(id,preview.skillName(),preview.version(),batch.started(),complete,items,targets,
+                expertResults,bindingResults,batch.ownerId(),ownerName==null?"用户 #"+batch.ownerId():ownerName,
+                !complete && Objects.equals(batch.ownerId(),user) && !batch.expiresAt().isBefore(LocalDateTime.now()));
     }
     public List<History> history(int page,int size,Long user) {
         authorize(user);pagination(page,size);
-        return assignments.history(user,size,(page-1)*size).stream().map(b -> {
-            var result=submission(b.id(),user);
+        return assignments.history(size,(page-1)*size).stream().map(b -> {
+            var result=submission(b,user);
             return new History(b.id(),result.skillName(),result.version(),b.createdAt(),
-                    count(result,"SUCCESS"),count(result,"FAILED"),count(result,"SKIPPED"),result.targets());
+                    result.expertResults().successCount(),result.expertResults().failedCount(),result.expertResults().skippedCount(),result.targets(),
+                    result.expertResults(),result.bindingResults(),result.ownerId(),result.ownerName(),result.complete());
         }).toList();
     }
-    private long count(Submission value,String status) {return value.items().stream().filter(i -> i.status().equals(status)).count();}
     private Candidate candidate(ExpertPO expert,List<Target> targets) {
         List<Long> ids=ids(expert.getSkillVersionIds());
         ExpertVersionPO published=expert.getPublishedVersionId()==null ? null : experts.version(expert.getPublishedVersionId());

@@ -3,12 +3,14 @@ package com.myharness.codex.service.impl;
 import com.myharness.codex.config.AgentProperties;
 import com.myharness.codex.entity.dto.SkillVersionStatusDTO;
 import com.myharness.codex.entity.dto.UpdateSkillDTO;
+import com.myharness.codex.entity.dto.PageQueryDTO;
 import com.myharness.codex.entity.enums.ErrorCode;
 import com.myharness.codex.entity.po.SkillPO;
 import com.myharness.codex.entity.po.SkillVersionPO;
 import com.myharness.codex.entity.vo.SkillFileVO;
 import com.myharness.codex.entity.vo.SkillVO;
 import com.myharness.codex.entity.vo.SkillVersionVO;
+import com.myharness.codex.entity.vo.PageVO;
 import com.myharness.codex.exception.BusinessException;
 import com.myharness.codex.mapper.SkillMapper;
 import com.myharness.codex.service.SkillService;
@@ -31,6 +33,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.HashSet;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -51,20 +54,50 @@ public class SkillServiceImpl implements SkillService {
     @Override
     public List<SkillVO> list(String keyword, String status) {
         validateSkillStatus(status, true);
-        return mapper.selectSkills(trim(keyword), trim(status)).stream().map(this::toVO).collect(Collectors.toList());
+        return toVOs(mapper.selectSkills(trim(keyword), trim(status)));
+    }
+
+    @Override
+    public PageVO<SkillVO> page(String keyword, String status, int page, int size) {
+        var query = new PageQueryDTO(page, size, keyword);
+        validateSkillStatus(status, true);
+        String filter = trim(status);
+        var rows = mapper.selectSkillPage(query.keyword(), filter, query.size(), query.offset());
+        return new PageVO<>(toVOs(rows), mapper.countSkills(query.keyword(), filter), query.page(), query.size());
+    }
+
+    @Override
+    public List<SkillVO> selected(List<Long> ids) {
+        if (ids == null || ids.isEmpty() || ids.size() > 50 || ids.stream().anyMatch(id -> id == null || id <= 0)
+                || new HashSet<>(ids).size() != ids.size())
+            throw new BusinessException(ErrorCode.INVALID_REQUEST, "请选择 1～50 个不重复的 Skill");
+        var rows = mapper.selectSkillsByIds(ids);
+        if (rows.size() != ids.size())
+            throw new BusinessException(ErrorCode.NOT_FOUND, "部分选中的 Skill 已不存在，请刷新列表后重新选择");
+        return toVOs(rows);
+    }
+
+    private List<SkillVO> toVOs(List<SkillPO> rows) {
+        if (rows.isEmpty()) return List.of();
+        var versions = mapper.selectVersionsForSkills(rows.stream().map(SkillPO::getId).toList()).stream()
+                .collect(Collectors.groupingBy(SkillVersionPO::getSkillId));
+        return rows.stream().map(skill -> new SkillVO(skill,
+                versions.getOrDefault(skill.getId(), List.of()).stream().map(SkillVersionVO::new).toList())).toList();
     }
 
     @Override
     public SkillVO get(Long skillId) { return toVO(requireSkill(skillId)); }
 
     @Override
-    public SkillVO create(String skillName, String description, String version, MultipartFile file, Long operatorId) throws IOException {
+    public SkillVO create(String skillName, String description, String tag, String version, MultipartFile file, Long operatorId) throws IOException {
         String normalizedName = validateName(skillName);
         String normalizedDescription = validateDescription(description);
+        String normalizedTag = SkillArchive.tag(tag);
         SkillVersionPO prepared = prepareVersion(version, file, operatorId);
         return publishPrepared(prepared, () -> {
             SkillPO skill = new SkillPO();
             skill.setSkillName(normalizedName); skill.setDescription(normalizedDescription); skill.setCreatedBy(operatorId);
+            skill.setTag(normalizedTag);
             try { mapper.insertSkill(skill); }
             catch (DuplicateKeyException exception) { throw new BusinessException(ErrorCode.CONFLICT, "Skill 名称已存在"); }
             prepared.setSkillId(skill.getId());
@@ -112,6 +145,7 @@ public class SkillServiceImpl implements SkillService {
         SkillPO skill = requireSkill(skillId);
         skill.setSkillName(validateName(dto.getSkillName()));
         skill.setDescription(validateDescription(dto.getDescription()));
+        if (dto.getTag() != null) skill.setTag(SkillArchive.tag(dto.getTag()));
         validateSkillStatus(dto.getStatus(), false); skill.setStatus(dto.getStatus());
         try { mapper.updateSkill(skill); }
         catch (DuplicateKeyException exception) { throw new BusinessException(ErrorCode.CONFLICT, "Skill 名称已存在"); }

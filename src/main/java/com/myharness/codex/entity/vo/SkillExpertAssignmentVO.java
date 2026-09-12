@@ -12,7 +12,10 @@ public final class SkillExpertAssignmentVO {
     public record Preview(String batchId,String skillName,String version,List<Candidate> items,LocalDateTime expiresAt,List<Target> targets) {}
     public record Result(Long expertId,String name,String action,Long previousVersionId,Long versionId,
             String status,String message,Long revision,List<Change> changes) {}
+    public record Counts(long total,long successCount,long failedCount,long skippedCount,long pendingCount) {}
     public record Submission(String batchId,String skillName,String version,boolean started,boolean complete,
-            List<Result> items,List<Target> targets) {}
-    public record History(String batchId,String skillName,String version,LocalDateTime createdAt,long successCount,long failedCount,long skippedCount,List<Target> targets) {}
+            List<Result> items,List<Target> targets,Counts expertResults,Counts bindingResults,
+            Long ownerId,String ownerName,boolean canResume) {}
+    public record History(String batchId,String skillName,String version,LocalDateTime createdAt,long successCount,long failedCount,long skippedCount,
+                          List<Target> targets,Counts expertResults,Counts bindingResults,Long ownerId,String ownerName,boolean complete) {}
 }

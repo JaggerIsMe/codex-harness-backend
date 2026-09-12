@@ -21,6 +21,11 @@ public final class SkillArchive {
     private static final int MAX_MANIFEST_BYTES = 256 * 1024;
     private SkillArchive() {}
     public record Metadata(String name, String description) {}
+    public static String tag(String value) {
+        if (value == null) return "";
+        if (value.length() > 200) throw invalid("Skill 标签不能超过 200 个字符");
+        return value.trim();
+    }
 
     public static void validateUpload(MultipartFile file) {
         if (file == null || file.isEmpty()) throw invalid("请选择 Skill ZIP 文件");

@@ -213,6 +213,81 @@ class SkillImportMysqlTest {
         assertThat(Files.readString(orphan)).isEqualTo("legacy orphan");
         assertThat(target).doesNotExist();
     }
+    @Test void tagsRoundTripAndRemainIndependentOfSingleAndBatchVersionUpdates() throws Exception {
+        var single = new com.myharness.codex.service.impl.SkillServiceImpl(session.getMapper(SkillMapper.class), properties, tx);
+        var created = single.create("tagged", "Description", "  团队常用，审查  ", "1", zip("tagged"), 901L);
+        assertThat(created.getTag()).isEqualTo("团队常用，审查");
+        assertThat(single.page("团队常用", "ENABLED", 1, 20).total()).isEqualTo(1);
+        assertThat(single.selected(List.of(created.getId())).getFirst().getTag()).isEqualTo(created.getTag());
+        var edit = new UpdateSkillDTO(); edit.setSkillName("tagged"); edit.setDescription("Changed"); edit.setStatus("ENABLED");
+        assertThat(single.update(created.getId(), edit).getTag()).isEqualTo(created.getTag());
+        single.uploadVersion(created.getId(), "2", zip("tagged"), 901L);
+        assertThat(single.get(created.getId()).getTag()).isEqualTo(created.getTag());
+        var preview = service.preview(new SkillImportDTO(SkillImportDTO.Mode.UPDATE, List.of(update(created.getId(), "tagged", "3"))), 901L);
+        service.commit(new SkillImportDTO.Commit(preview.previewId(), UUID.randomUUID().toString()), 901L);
+        assertThat(single.get(created.getId()).getTag()).isEqualTo(created.getTag());
+        edit.setTag(" ");
+        assertThat(single.update(created.getId(), edit).getTag()).isEmpty();
+        edit.setTag("x".repeat(201));
+        assertThatThrownBy(() -> single.update(created.getId(), edit)).hasMessageContaining("200");
+        assertThatThrownBy(() -> single.create("invalid", "", "x".repeat(201), "1", zip("invalid"), 901L)).hasMessageContaining("200");
+    }
+
+    @Test void batchCreationPersistsTagsAndMigrationPreservesExistingValuesWhenRepeated() throws Exception {
+        var file = service.upload(zip("tagged-batch"), 901L);
+        var item = new SkillImportDTO.Item("tagged-item", file.uploadId(), null, "tagged-batch", "", "1", "  批量备注  ");
+        var preview = service.preview(new SkillImportDTO(SkillImportDTO.Mode.CREATE, List.of(item)), 901L);
+        var result = service.commit(new SkillImportDTO.Commit(preview.previewId(), UUID.randomUUID().toString()), 901L);
+        assertThat(result.successCount()).isEqualTo(1);
+        mysql.applyResource("db/migration-skill-tag.sql");
+        assertThat(jdbc.queryForObject("SELECT tag FROM skill WHERE id=?", String.class, result.items().getFirst().skillId())).isEqualTo("批量备注");
+        jdbc.execute("ALTER TABLE skill DROP COLUMN tag");
+        mysql.applyResource("db/migration-skill-tag.sql");
+        mysql.applyResource("db/migration-skill-tag.sql");
+        assertThat(jdbc.queryForObject("SELECT tag FROM skill WHERE id=?", String.class, result.items().getFirst().skillId())).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM skill_version", Long.class)).isEqualTo(1);
+    }
+
+    @Test void batchUpdateChangesAndClearsTagIncludingDuplicateVersionsWithoutReactivation() throws Exception {
+        var created = create("batch-tag");
+        var next = update(created.skillId(), "batch-tag", "2");
+        var tagged = new SkillImportDTO.Item(next.itemId(), next.uploadId(), next.skillId(), next.skillName(), next.description(), next.version(), "  新标签  ");
+        var preview = service.preview(new SkillImportDTO(SkillImportDTO.Mode.UPDATE, List.of(tagged)), 901L);
+        var result = service.commit(new SkillImportDTO.Commit(preview.previewId(), UUID.randomUUID().toString()), 901L);
+        assertThat(result.successCount()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT tag FROM skill WHERE id=?", String.class, created.skillId())).isEqualTo("新标签");
+        assertThat(status(created.versionId())).isEqualTo("DISABLED");
+        var duplicate = update(created.skillId(), "batch-tag", "1");
+        var cleared = new SkillImportDTO.Item(duplicate.itemId(), duplicate.uploadId(), duplicate.skillId(), duplicate.skillName(), duplicate.description(), duplicate.version(), "");
+        var clearPreview = service.preview(new SkillImportDTO(SkillImportDTO.Mode.UPDATE, List.of(cleared)), 901L);
+        assertThat(clearPreview.items().getFirst().status()).isEqualTo("READY");
+        assertThat(clearPreview.items().getFirst().message()).contains("仅更新标签");
+        var commit = new SkillImportDTO.Commit(clearPreview.previewId(), UUID.randomUUID().toString());
+        assertThat(service.commit(commit, 901L).successCount()).isEqualTo(1);
+        assertThat(service.commit(commit, 901L).successCount()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT tag FROM skill WHERE id=?", String.class, created.skillId())).isEmpty();
+        assertThat(status(created.versionId())).isEqualTo("DISABLED");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM skill_version", Long.class)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT expires_at FROM skill_import_record WHERE id=?", java.time.LocalDateTime.class, duplicate.uploadId()))
+                .isBefore(java.time.LocalDateTime.now());
+    }
+
+    @Test void concurrentTagEditsInvalidateBatchPreviewAndFailedVersionWritesRollBackTag() throws Exception {
+        var created = create("tag-conflict");
+        var next = update(created.skillId(), "tag-conflict", "2");
+        var tagged = new SkillImportDTO.Item(next.itemId(), next.uploadId(), next.skillId(), next.skillName(), next.description(), next.version(), "目标标签");
+        var request = new SkillImportDTO(SkillImportDTO.Mode.UPDATE, List.of(tagged));
+        var preview = service.preview(request, 901L);
+        jdbc.update("UPDATE skill SET tag='Concurrent' WHERE id=?", created.skillId());
+        assertThatThrownBy(() -> service.commit(new SkillImportDTO.Commit(preview.previewId(), UUID.randomUUID().toString()), 901L)).hasMessageContaining("重新预览");
+        var refreshed = service.preview(request, 901L);
+        jdbc.execute("CREATE TRIGGER fail_tag_version BEFORE INSERT ON skill_version FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture failure'");
+        try {
+            assertThat(service.commit(new SkillImportDTO.Commit(refreshed.previewId(), UUID.randomUUID().toString()), 901L).failedCount()).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT tag FROM skill WHERE id=?", String.class, created.skillId())).isEqualTo("Concurrent");
+        } finally { jdbc.execute("DROP TRIGGER fail_tag_version"); }
+    }
+
     private SkillImportCleanup cleanupService() {
         return new SkillImportCleanup(session.getMapper(SkillMapper.class),session.getMapper(SkillImportMapper.class),tx,json,properties);
     }
@@ -224,14 +299,14 @@ class SkillImportMysqlTest {
     private SkillImportVO.Result create(String name) throws Exception {
         var file=service.upload(zip(name),901L);
         assertThat(file.skillName()).isEqualTo(name);
-        var item=new SkillImportDTO.Item(UUID.randomUUID().toString(),file.uploadId(),null,name,"Description","1");
+        var item=new SkillImportDTO.Item(UUID.randomUUID().toString(),file.uploadId(),null,name,"Description","1",null);
         var preview=service.preview(new SkillImportDTO(SkillImportDTO.Mode.CREATE,List.of(item)),901L);
         var result=service.commit(new SkillImportDTO.Commit(preview.previewId(),UUID.randomUUID().toString()),901L);
         assertThat(result.successCount()).isEqualTo(1); return result.items().getFirst();
     }
     private SkillImportDTO.Item update(Long id,String name,String version) throws Exception {
         var file=service.upload(zip(name),901L);
-        return new SkillImportDTO.Item(UUID.randomUUID().toString(),file.uploadId(),id,name,"",version);
+        return new SkillImportDTO.Item(UUID.randomUUID().toString(),file.uploadId(),id,name,"",version,null);
     }
     private MockMultipartFile zip(String name) throws Exception {
         var output=new ByteArrayOutputStream();

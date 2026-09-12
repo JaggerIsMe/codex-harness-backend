@@ -6,6 +6,7 @@ public class SkillPO {
     private Long id;
     private String skillName;
     private String description;
+    private String tag = "";
     private String status;
     private Long createdBy;
     private LocalDateTime createdAt;
@@ -18,6 +19,8 @@ public class SkillPO {
     public void setSkillName(String skillName) { this.skillName = skillName; }
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
+    public String getTag() { return tag; }
+    public void setTag(String tag) { this.tag = tag; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public Long getCreatedBy() { return createdBy; }

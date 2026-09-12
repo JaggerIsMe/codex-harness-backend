@@ -48,7 +48,7 @@ class SkillServiceImplTest {
         });
         SkillServiceImpl service = service(mapper);
 
-        service.create("code-review", "review changes", "1.0.0", upload("SKILL.md", "# Review"), 3L);
+        service.create("code-review", "review changes", "团队常用", "1.0.0", upload("SKILL.md", "# Review"), 3L);
 
         verify(mapper).insertVersion(any(SkillVersionPO.class));
         try (Stream<Path> files = Files.list(temporaryDirectory)) {

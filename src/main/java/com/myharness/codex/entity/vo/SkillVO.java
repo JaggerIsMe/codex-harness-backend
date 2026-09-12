@@ -8,6 +8,7 @@ public class SkillVO {
     private final Long id;
     private final String skillName;
     private final String description;
+    private final String tag;
     private final String status;
     private final Integer versionCount;
     private final LocalDateTime createdAt;
@@ -15,12 +16,14 @@ public class SkillVO {
     private final List<SkillVersionVO> versions;
 
     public SkillVO(SkillPO value, List<SkillVersionVO> versions) {
+        tag = value.getTag();
         id = value.getId(); skillName = value.getSkillName(); description = value.getDescription(); status = value.getStatus();
         versionCount = value.getVersionCount(); createdAt = value.getCreatedAt(); updatedAt = value.getUpdatedAt(); this.versions = versions;
     }
     public Long getId() { return id; }
     public String getSkillName() { return skillName; }
     public String getDescription() { return description; }
+    public String getTag() { return tag; }
     public String getStatus() { return status; }
     public Integer getVersionCount() { return versionCount; }
     public LocalDateTime getCreatedAt() { return createdAt; }

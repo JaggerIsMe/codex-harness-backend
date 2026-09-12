@@ -15,13 +15,23 @@ public interface SkillMapper {
     // Acquired before Skill/expert/project locks by every catalog writer.
     @Select("SELECT id FROM skill_catalog_lock WHERE id=1 FOR UPDATE")
     Integer lockCatalog();
-    String SKILL_SELECT = "SELECT s.id,s.skill_name,s.description,s.status,s.created_by,s.created_at,s.updated_at," +
+    String SKILL_SELECT = "SELECT s.id,s.skill_name,s.description,s.tag,s.status,s.created_by,s.created_at,s.updated_at," +
             "(SELECT COUNT(*) FROM skill_version sv WHERE sv.skill_id=s.id) version_count FROM skill s ";
 
-    @Select(SKILL_SELECT + "WHERE (#{keyword} IS NULL OR #{keyword}='' OR s.skill_name LIKE CONCAT('%',#{keyword},'%') " +
-            "OR s.description LIKE CONCAT('%',#{keyword},'%')) AND (#{status} IS NULL OR #{status}='' OR s.status=#{status}) " +
-            "ORDER BY s.updated_at DESC,s.id DESC")
+    String SKILL_FILTER = "WHERE (#{keyword} IS NULL OR #{keyword}='' OR s.skill_name LIKE CONCAT('%',#{keyword},'%') " +
+            "OR s.description LIKE CONCAT('%',#{keyword},'%') OR s.tag LIKE CONCAT('%',#{keyword},'%')) AND (#{status} IS NULL OR #{status}='' OR s.status=#{status}) ";
+    @Select(SKILL_SELECT + SKILL_FILTER + "ORDER BY s.updated_at DESC,s.id DESC")
     List<SkillPO> selectSkills(@Param("keyword") String keyword,@Param("status") String status);
+
+    @Select(SKILL_SELECT + SKILL_FILTER + "ORDER BY s.updated_at DESC,s.id DESC LIMIT #{size} OFFSET #{offset}")
+    List<SkillPO> selectSkillPage(@Param("keyword") String keyword,@Param("status") String status,
+                                @Param("size") int size,@Param("offset") long offset);
+    @Select("SELECT COUNT(*) FROM skill s " + SKILL_FILTER)
+    long countSkills(@Param("keyword") String keyword,@Param("status") String status);
+    @Select("<script>" + SKILL_SELECT + "WHERE s.id IN <foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach> ORDER BY s.updated_at DESC,s.id DESC</script>")
+    List<SkillPO> selectSkillsByIds(@Param("ids") List<Long> ids);
+    @Select("<script>SELECT * FROM skill_version WHERE skill_id IN <foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach> ORDER BY created_at DESC,id DESC</script>")
+    List<SkillVersionPO> selectVersionsForSkills(@Param("ids") List<Long> ids);
 
     @Select(SKILL_SELECT + "WHERE s.id=#{id}")
     SkillPO selectSkill(@Param("id") Long id);
@@ -32,12 +42,14 @@ public interface SkillMapper {
     @Select(SKILL_SELECT + "WHERE s.skill_name=#{skillName}")
     SkillPO selectSkillByName(@Param("skillName") String skillName);
 
-    @Insert("INSERT INTO skill(skill_name,description,status,created_by) VALUES(#{skillName},#{description},'ENABLED',#{createdBy})")
+    @Insert("INSERT INTO skill(skill_name,description,tag,status,created_by) VALUES(#{skillName},#{description},#{tag},'ENABLED',#{createdBy})")
     @Options(useGeneratedKeys=true,keyProperty="id")
     int insertSkill(SkillPO skill);
 
-    @Update("UPDATE skill SET skill_name=#{skillName},description=#{description},status=#{status} WHERE id=#{id}")
+    @Update("UPDATE skill SET skill_name=#{skillName},description=#{description},tag=#{tag},status=#{status} WHERE id=#{id}")
     int updateSkill(SkillPO skill);
+    @Update("UPDATE skill SET tag=#{tag} WHERE id=#{id}")
+    int updateTag(@Param("id") Long id, @Param("tag") String tag);
 
     @Insert("INSERT INTO skill_version(skill_id,version,storage_path,sha256,file_size,status,created_by) " +
             "VALUES(#{skillId},#{version},#{storagePath},#{sha256},#{fileSize},'ACTIVE',#{createdBy})")

@@ -219,6 +219,65 @@ class SkillExpertAssignmentMysqlTest {
         assertThat(service.commit(preview.batchId(),901L).items().getFirst().status()).isEqualTo("SUCCESS");
         assertThat(service.submission(preview.batchId(),901L).targets()).hasSize(1);
     }
+    @Test void historySeparatesExpertOutcomesFromIndividualSkillBindings() {
+        var first=skill();var second=skill();long id=expert(List.of(first[1]),"PUBLISHED");
+        var preview=service.preview(batch(List.of(first,second),List.of(id)),901L);
+        service.commit(preview.batchId(),901L);
+        var history=service.history(1,50,901L).stream().filter(h -> h.batchId().equals(preview.batchId())).findFirst().orElseThrow();
+        var data=json.valueToTree(history);
+        assertThat(history.successCount()).isEqualTo(1);
+        assertThat(data.path("bindingResults").path("successCount").asLong(-1)).isEqualTo(1);
+        assertThat(data.path("bindingResults").path("skippedCount").asLong(-1)).isEqualTo(1);
+        assertThat(data.path("bindingResults").path("total").asLong(-1)).isEqualTo(2);
+    }
+    @Test void administratorsCanReadOthersHistoryButCannotSubmitTheirBatches() {
+        var first=skill();long id=expert(List.of(),"DRAFT");var preview=preview(first,List.of(id));
+        assertThatThrownBy(() -> service.submission(preview.batchId(),902L)).hasMessageContaining("不存在");
+        service.commit(preview.batchId(),901L);
+        assertThat(service.history(1,50,902L)).extracting(History::batchId).contains(preview.batchId());
+        assertThat(service.submission(preview.batchId(),902L).items()).extracting(Result::status).containsExactly("SUCCESS");
+        assertThatThrownBy(() -> service.commit(preview.batchId(),902L)).hasMessageContaining("不存在");
+    }
+    @Test void historyIncludesFailedAndPendingBindingsWithoutReportingCompletion() throws Exception {
+        var first=skill();var second=skill();long ok=expert(List.of(first[1]),"PUBLISHED"),failed=expert(List.of(),"DRAFT"),pending=expert(List.of(),"DRAFT");
+        var preview=service.preview(batch(List.of(first,second),List.of(ok,failed,pending)),901L);
+        var mapper=session.getMapper(SkillExpertAssignmentMapper.class);
+        var okPreview=preview.items().stream().filter(i -> i.expertId()==ok).findFirst().orElseThrow();
+        var failedPreview=preview.items().stream().filter(i -> i.expertId()==failed).findFirst().orElseThrow();
+        String saved=json.writeValueAsString(new Result(ok,okPreview.name(),"ADD",first[1],first[1],"SUCCESS","已更新草稿",1L,okPreview.changes()));
+        String failure=json.writeValueAsString(new Result(failed,failedPreview.name(),"ADD",null,first[1],"FAILED","保存失败",null,failedPreview.changes()));
+        // Persist the first two expert transactions, as if the worker stopped before the third.
+        mapper.start(preview.batchId());
+        tx.executeWithoutResult(status -> {
+            mapper.assign(ok,"["+first[1]+","+second[1]+"]");
+            mapper.result(new SkillExpertAssignmentItemPO(preview.batchId(),ok,saved));
+        });
+        mapper.result(new SkillExpertAssignmentItemPO(preview.batchId(),failed,failure));
+        var result=service.submission(preview.batchId(),901L);
+        assertThat(result.expertResults()).isEqualTo(new Counts(3,1,1,0,1));
+        assertThat(result.bindingResults()).isEqualTo(new Counts(6,1,2,1,2));
+        assertThat(result.complete()).isFalse();assertThat(result.canResume()).isTrue();
+        assertThat(result.ownerId()).isEqualTo(901L);assertThat(result.ownerName()).isEqualTo("Fixture");
+        var history=service.history(1,50,902L).stream().filter(h -> h.batchId().equals(preview.batchId())).findFirst().orElseThrow();
+        assertThat(history.expertResults()).isEqualTo(result.expertResults());
+        assertThat(history.bindingResults()).isEqualTo(result.bindingResults());assertThat(history.complete()).isFalse();
+        assertThat(service.submission(preview.batchId(),902L).canResume()).isFalse();
+        jdbc.update("UPDATE skill_expert_assignment_batch SET expires_at='2020-01-01' WHERE id=?",preview.batchId());
+        assertThat(service.submission(preview.batchId(),901L).canResume()).isFalse();
+    }
+    @Test void legacySingleSkillResultsStillHaveAccurateCountsAndGlobalReadsRequirePermissions() {
+        var first=skill();long id=expert(List.of(first[1]),"PUBLISHED");var preview=preview(first,List.of(id));
+        service.commit(preview.batchId(),901L);
+        jdbc.update("UPDATE skill_expert_assignment_batch SET payload=JSON_REMOVE(payload,'$.targets','$.items[0].changes') WHERE id=?",preview.batchId());
+        jdbc.update("UPDATE skill_expert_assignment_item SET payload=JSON_REMOVE(payload,'$.changes') WHERE batch_id=?",preview.batchId());
+        var result=service.submission(preview.batchId(),902L);
+        assertThat(result.expertResults()).isEqualTo(new Counts(1,0,0,1,0));
+        assertThat(result.bindingResults()).isEqualTo(new Counts(1,0,0,1,0));
+        doThrow(new IllegalStateException("forbidden")).when(access).requirePermission(903L,"expert:manage");
+        assertThatThrownBy(() -> service.history(1,50,903L)).hasMessage("forbidden");
+        assertThatThrownBy(() -> service.submission(preview.batchId(),903L)).hasMessage("forbidden");
+        verify(access,atLeastOnce()).requirePermission(903L,"skill:manage");
+    }
     private SkillExpertBatchAssignmentDTO batch(List<Long[]> skills,List<Long> ids) {
         return new SkillExpertBatchAssignmentDTO(skills.stream().map(s -> new SkillExpertBatchAssignmentDTO.Target(s[2],s[1])).toList(),ids);
     }
