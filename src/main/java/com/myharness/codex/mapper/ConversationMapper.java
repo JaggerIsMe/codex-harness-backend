@@ -13,6 +13,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public interface ConversationMapper {
+    @Select("SELECT COUNT(*) FROM conversation_turn t JOIN conversation c ON c.id=t.conversation_id WHERE c.project_id=#{projectId} AND t.status IN ('CREATED','RUNNING','WAITING_APPROVAL')")
+    int countActiveProjectTurns(Long projectId);
     String LATEST_TURN_COLUMNS = ",latest_turn.id latest_turn_id,latest_turn.status latest_turn_status," +
             "latest_turn.failure_message latest_turn_failure_message," +
             "EXISTS(SELECT 1 FROM conversation_message latest_message WHERE latest_message.turn_id=latest_turn.id " +

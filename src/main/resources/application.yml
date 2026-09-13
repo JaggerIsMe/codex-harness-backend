@@ -55,6 +55,13 @@ log:
     level: debug
 
 harness:
+  orchestration:
+    # 执行 migration-orchestration.sql、migration-workflow-canvas.sql 并同步升级 Agent 后启用。
+    enabled: true
+    max-active-turns-per-device: 4
+    max-queued-per-user: 10
+    execution-timeout-minutes: 60
+    scan-interval-ms: 2000
   # 账号邮件：事务入队，后台投递；启用时校验 SMTP、站点地址和独立密钥。
   mail:
     enabled: true

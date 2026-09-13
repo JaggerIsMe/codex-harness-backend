@@ -1,6 +1,8 @@
 # Harness Server
 
-My Harness For Codex 的中台后端。已提供登录鉴权、设备注册、隔离项目、Agent WebSocket、会话/Turn、Skill 下发和用户定向实时事件。
+[项目文档总目录](../../docs/README.md) · [当前架构](../../docs/architecture/overview.md) · [当前数据模型](../../docs/architecture/data-model.md)
+
+My Harness For Codex 的中台后端。提供邮箱认证与权限、设备注册、私人项目、会话/Turn、专家、Skill 仓库与草稿分配、MCP、模型配置、工作区文件和用户定向实时事件。
 
 ## 本地启动
 

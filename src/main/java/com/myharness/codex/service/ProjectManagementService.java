@@ -19,6 +19,16 @@ import org.springframework.transaction.support.TransactionTemplate;
 /** Owns display names and deletion of private Project/Conversation records, without deleting Workspace files. */
 @Service
 public class ProjectManagementService {
+    private com.myharness.codex.mapper.OrchestrationMapper orchestration;
+    private com.myharness.codex.config.OrchestrationProperties orchestrationProperties;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setOrchestration(com.myharness.codex.mapper.OrchestrationMapper mapper,com.myharness.codex.config.OrchestrationProperties properties) {
+        orchestration=mapper;orchestrationProperties=properties;
+    }
+    private void requireNoOrchestration(Long projectId) {
+        if(orchestrationProperties!=null && orchestrationProperties.isEnabled() && orchestration.pendingProject(projectId)>0)
+            throw new BusinessException(ErrorCode.CONFLICT,"项目仍有待处理编排，请先停止编排并核实执行结果");
+    }
     private final ProjectManagementMapper mutations;
     private final ProjectMapper projects;
     private final ConversationMapper conversations;
@@ -60,6 +70,7 @@ public class ProjectManagementService {
         access.requirePermission(userId,"conversation:delete");
         transactions.executeWithoutResult(tx -> {
             lockOwnedProject(projectId,userId);
+            requireNoOrchestration(projectId);
             lockOwnedConversation(projectId,id,userId);
             requireIdle(id);
             deleteConversationRecords(id);
@@ -70,6 +81,7 @@ public class ProjectManagementService {
         access.requirePermission(userId,"project:delete");
         transactions.executeWithoutResult(tx -> {
             ProjectPO project=lockOwnedProject(id,userId);
+            requireNoOrchestration(id);
             var ids=mutations.lockProjectConversations(id);
             for(Long conversationId:ids) requireIdle(conversationId);
             for(Long conversationId:ids) deleteConversationRecords(conversationId);

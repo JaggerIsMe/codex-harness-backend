@@ -26,6 +26,12 @@ import java.util.Map;
 
 @Service
 public class AgentEventServiceImpl implements AgentEventService {
+    private com.myharness.codex.mapper.OrchestrationMapper orchestration;
+    private com.myharness.codex.config.OrchestrationProperties orchestrationProperties;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setOrchestration(com.myharness.codex.mapper.OrchestrationMapper mapper,com.myharness.codex.config.OrchestrationProperties properties) {
+        orchestration=mapper;orchestrationProperties=properties;
+    }
     private com.myharness.codex.service.WorkspaceFileService workspaceFiles;
     @org.springframework.beans.factory.annotation.Autowired
     public void setWorkspaceFiles(com.myharness.codex.service.WorkspaceFileService value) { workspaceFiles=value; }
@@ -245,6 +251,8 @@ public class AgentEventServiceImpl implements AgentEventService {
                 payload.hasNonNull("lastEventSeq") ? payload.get("lastEventSeq").asLong() : null);
         conversationMapper.finishTurn(id(payload,"turnId"),id(payload,"conversationId"),deviceId,status,failureCode,
                 optionalText(payload,"reason",2000),now);
+        if(orchestrationProperties!=null && orchestrationProperties.isEnabled())
+            orchestration.terminal(id(payload,"turnId"),id(payload,"conversationId"),deviceId,status);
         ConversationPO conversation=conversationMapper.selectConversation(id(payload,"conversationId"));
         if(conversation!=null && deviceId.equals(conversation.getDeviceId()))
             afterFileCommit(() -> workspaceFiles.refreshProject(conversation.getProjectId(),conversation.getUserId()));

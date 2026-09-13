@@ -4,6 +4,7 @@ import com.myharness.codex.entity.po.ConversationPO;
 import java.time.LocalDateTime;
 
 public class ConversationVO {
+    private final boolean orchestrationManaged;
     private final Long id;
     private final Long deviceId;
     private final Long workspaceId;
@@ -19,6 +20,10 @@ public class ConversationVO {
     private final boolean latestTurnHasIncompleteMessage;
 
     public ConversationVO(ConversationPO value) {
+        this(value,false);
+    }
+    public ConversationVO(ConversationPO value,boolean orchestrationManaged) {
+        this.orchestrationManaged=orchestrationManaged;
         id=value.getId(); deviceId=value.getDeviceId(); workspaceId=value.getWorkspaceId(); projectId=value.getProjectId(); projectName=value.getProjectName();
         title=value.getTitle(); status=value.getStatus(); codexThreadId=value.getCodexThreadId();
         lastActivityAt=value.getLastActivityAt();
@@ -27,6 +32,7 @@ public class ConversationVO {
         latestTurnHasIncompleteMessage=value.getLatestTurnHasIncompleteMessage();
     }
     public Long getId() { return id; }
+    public boolean isOrchestrationManaged() { return orchestrationManaged; }
     public Long getDeviceId() { return deviceId; }
     public Long getWorkspaceId() { return workspaceId; }
     public Long getProjectId() { return projectId; }

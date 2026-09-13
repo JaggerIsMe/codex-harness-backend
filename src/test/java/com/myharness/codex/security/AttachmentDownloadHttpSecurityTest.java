@@ -91,6 +91,8 @@ class AttachmentDownloadHttpSecurityTest {
     @Configuration @EnableWebMvc @EnableWebSecurity
     @Import({UserSecurityConfig.class,ConversationAttachmentController.class,ConversationAttachmentService.class,GlobalExceptionHandler.class})
     static class Config {
+        @Bean com.myharness.codex.mapper.OrchestrationMapper orchestration(){return mock(com.myharness.codex.mapper.OrchestrationMapper.class);}
+        @Bean com.myharness.codex.config.OrchestrationProperties orchestrationProperties(){return new com.myharness.codex.config.OrchestrationProperties();}
         @Bean ObjectMapper json(){return new ObjectMapper();}
         @Bean ConversationAttachmentMapper attachments(){return mock(ConversationAttachmentMapper.class);}
         @Bean ConversationMapper conversations(){return mock(ConversationMapper.class);}

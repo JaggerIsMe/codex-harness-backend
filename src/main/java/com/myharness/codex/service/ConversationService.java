@@ -11,6 +11,8 @@ import com.myharness.codex.entity.vo.MessageStateVO;
 import com.myharness.codex.entity.vo.PageVO;
 
 public interface ConversationService {
+    ConversationVO createOrchestrationConversation(Long projectId,CreateConversationDTO dto,Long operatorId,Long stepId);
+    TurnVO startOrchestrationTurn(Long projectId,Long conversationId,StartTurnDTO dto,Long operatorId,Long stepId);
     ConversationVO createConversation(Long projectId,CreateConversationDTO dto,Long operatorId);
     TurnVO startTurn(Long projectId,Long conversationId,StartTurnDTO dto,Long operatorId);
     void interruptTurn(Long projectId,Long conversationId,Long turnId,Long operatorId);

@@ -177,6 +177,8 @@ class WorkspaceFileHttpSecurityTest {
     @Import({UserSecurityConfig.class,AgentWorkspaceFileController.class,WorkspaceFileController.class,
             WorkspaceFileService.class,WorkspaceFilePreviewService.class,WorkspacePreviewProperties.class,DeviceAuthenticationService.class,GlobalExceptionHandler.class})
     static class Config {
+        @Bean OrchestrationMapper orchestration(){return mock(OrchestrationMapper.class);}
+        @Bean OrchestrationProperties orchestrationProperties(){return new OrchestrationProperties();}
         @Bean ObjectMapper json(){return new ObjectMapper();}
         @Bean WorkspaceFileProperties properties(){return new WorkspaceFileProperties();}
         @Bean WorkspaceFileOperationMapper operations(){return mock(WorkspaceFileOperationMapper.class);}

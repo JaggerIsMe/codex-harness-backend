@@ -38,6 +38,12 @@ import java.util.stream.Collectors;
 
 @Service
 public class ConversationServiceImpl implements ConversationService {
+    private com.myharness.codex.mapper.OrchestrationMapper orchestration;
+    private com.myharness.codex.config.OrchestrationProperties orchestrationProperties;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setOrchestration(com.myharness.codex.mapper.OrchestrationMapper mapper,com.myharness.codex.config.OrchestrationProperties properties) {
+        orchestration=mapper;orchestrationProperties=properties;
+    }
     private com.myharness.codex.service.WorkspaceFileService workspaceFiles;
     @org.springframework.beans.factory.annotation.Autowired
     public void setWorkspaceFiles(com.myharness.codex.service.WorkspaceFileService value) {workspaceFiles=value;}
@@ -85,6 +91,12 @@ public class ConversationServiceImpl implements ConversationService {
     }
 
     @Override public ConversationVO createConversation(Long projectId,CreateConversationDTO dto,Long operatorId) {
+        return create(projectId,dto,operatorId,null);
+    }
+    @Override public ConversationVO createOrchestrationConversation(Long projectId,CreateConversationDTO dto,Long operatorId,Long stepId) {
+        return create(projectId,dto,operatorId,java.util.Objects.requireNonNull(stepId));
+    }
+    private ConversationVO create(Long projectId,CreateConversationDTO dto,Long operatorId,Long stepId) {
         access.requirePermission(operatorId,"conversation:create");
         ProjectPO project=requireActiveProject(projectId,operatorId);
         AgentDevicePO device=requireOnline(project.getDeviceId());
@@ -101,7 +113,10 @@ public class ConversationServiceImpl implements ConversationService {
             value.setTitle(trimOr(dto.getTitle(),"新会话")); value.setStatus("ACTIVE"); value.setLastActivityAt(LocalDateTime.now());
             if(modelRuntime!=null)value.setModelRuntimeKey(modelRuntime.getRuntimeKey());
             experts.bindAtCreation(value,dto.getExpertId());
-            conversationMapper.insertConversation(value); return value;
+            conversationMapper.insertConversation(value);
+            if(stepId!=null && orchestration.linkConversation(stepId,value.getId(),projectId,operatorId)!=1)
+                throw new BusinessException(ErrorCode.CONFLICT,"编排步骤不允许创建会话");
+            return value;
         });
         Map<String,Object> payload=new LinkedHashMap<>();
         payload.put("projectId",String.valueOf(project.getId())); payload.put("conversationId",String.valueOf(conversation.getId())); payload.put("workspaceName",workspace.getWorkspaceName());
@@ -111,10 +126,16 @@ public class ConversationServiceImpl implements ConversationService {
             conversationMapper.failConversation(conversation.getId(),device.getId(),LocalDateTime.now());
             throw exception;
         }
-        return new ConversationVO(conversationMapper.selectConversation(conversation.getId()));
+        return new ConversationVO(conversationMapper.selectConversation(conversation.getId()),stepId!=null);
     }
 
     @Override public TurnVO startTurn(Long projectId,Long conversationId,StartTurnDTO dto,Long operatorId) {
+        return start(projectId,conversationId,dto,operatorId,null);
+    }
+    @Override public TurnVO startOrchestrationTurn(Long projectId,Long conversationId,StartTurnDTO dto,Long operatorId,Long stepId) {
+        return start(projectId,conversationId,dto,operatorId,java.util.Objects.requireNonNull(stepId));
+    }
+    private TurnVO start(Long projectId,Long conversationId,StartTurnDTO dto,Long operatorId,Long stepId) {
         access.requirePermission(operatorId,"turn:start");
         requireActiveProject(projectId,operatorId);
         ConversationPO conversation=requireOwned(projectId,conversationId,operatorId);
@@ -137,6 +158,12 @@ public class ConversationServiceImpl implements ConversationService {
                 if(!"ACTIVE".equals(locked.getStatus()))
                     throw new BusinessException(ErrorCode.CONFLICT,"会话当前不可执行");
                 threadModelRuntimeKey.set(locked.getModelRuntimeKey());
+                if(stepId==null && orchestrationEnabled()) {
+                    if(orchestration.managedConversation(conversationId)>0)
+                        throw new BusinessException(ErrorCode.CONFLICT,"编排步骤会话仅供查看，不允许直接发送消息");
+                    if(orchestration.reservedProject(projectId)>0)
+                        throw new BusinessException(ErrorCode.CONFLICT,"项目正在执行编排，请在编排页面停止后再发送消息");
+                }
                 if(dto.getClientRequestId()!=null) {
                     ConversationTurnPO previous=conversationMapper.byClientRequest(conversationId,dto.getClientRequestId());
                     if(previous!=null) {
@@ -144,6 +171,8 @@ public class ConversationServiceImpl implements ConversationService {
                         return previous;
                     }
                 }
+                if(conversationMapper.countActiveProjectTurns(projectId)>0)
+                    throw new BusinessException(ErrorCode.CONFLICT,"项目已有活动 Turn，请等待结束后再执行");
                 if(workspaceFiles!=null) workspaceFiles.assertNoMutation(projectId);
                 AgentDevicePO online=requireOnline(conversation.getDeviceId());
                 if(!dto.getAttachmentIds().isEmpty() && !Boolean.TRUE.equals(online.getConversationAttachments()))
@@ -159,6 +188,8 @@ public class ConversationServiceImpl implements ConversationService {
                 value.setPreparationPhase(dto.getAttachmentIds().isEmpty() ? null : "DOWNLOADING");
                 if(!runtime.getSkills().isEmpty()) value.setPreparationPhase("EXPERT_SKILLS");
                 conversationMapper.insertTurn(value);
+                if(stepId!=null && orchestration.linkTurn(stepId,value.getId(),conversationId,projectId,operatorId)!=1)
+                    throw new BusinessException(ErrorCode.CONFLICT,"编排步骤不允许派发 Turn");
                 long sequence=conversationMapper.nextSequence(conversationId);
                 conversationMapper.insertMessage(conversationId,value.getId(),sequence,"USER","TEXT",dto.getMessage()==null ? "" : dto.getMessage());
                 attachments.bind(locked,value.getId(),dto.getAttachmentIds());
@@ -205,13 +236,23 @@ public class ConversationServiceImpl implements ConversationService {
         gateway.send(conversation.getDeviceCode(),new AgentCommand("INTERRUPT_TURN",String.valueOf(turnId),payload));
     }
 
-    @Override public ConversationVO getConversation(Long projectId,Long conversationId,Long operatorId) { return new ConversationVO(requireOwned(projectId,conversationId,operatorId)); }
+    private boolean orchestrationEnabled() {
+        return orchestration!=null && orchestrationProperties!=null && orchestrationProperties.isEnabled();
+    }
+    @Override public ConversationVO getConversation(Long projectId,Long conversationId,Long operatorId) {
+        var value=requireOwned(projectId,conversationId,operatorId);
+        return new ConversationVO(value,orchestrationEnabled() && orchestration.managedConversation(conversationId)>0);
+    }
 
     @Override public PageVO<ConversationVO> getProjectConversations(Long projectId,Long operatorId,int page,int size,String keyword) {
         requireActiveProject(projectId,operatorId);
         var query=new WorkspacePageQuery(page,size,keyword);
-        long total=conversationMapper.countProjectConversations(projectId,operatorId,query.keyword());
-        List<ConversationVO> items=conversationMapper.selectProjectConversations(projectId,operatorId,query.keyword(),query.size(),query.offset()).stream().map(ConversationVO::new).toList();
+        boolean managed=orchestrationEnabled();
+        long total=managed ? orchestration.countOrdinaryConversations(projectId,operatorId,query.keyword())
+                : conversationMapper.countProjectConversations(projectId,operatorId,query.keyword());
+        var rows=managed ? orchestration.ordinaryConversations(projectId,operatorId,query.keyword(),query.size(),query.offset())
+                : conversationMapper.selectProjectConversations(projectId,operatorId,query.keyword(),query.size(),query.offset());
+        List<ConversationVO> items=rows.stream().map(ConversationVO::new).toList();
         return new PageVO<>(items,total,query.page(),query.size());
     }
 
@@ -222,7 +263,8 @@ public class ConversationServiceImpl implements ConversationService {
             throw new BusinessException(ErrorCode.INVALID_REQUEST,"请提供 1–100 个不重复的正整数会话 ID");
         List<ConversationPO> values=conversationMapper.selectConversationStatuses(projectId,operatorId,ids);
         if(values.size()!=ids.size()) throw new BusinessException(ErrorCode.NOT_FOUND,"会话不存在");
-        return values.stream().map(ConversationVO::new).toList();
+        var managed=orchestrationEnabled() ? new HashSet<>(orchestration.managedConversations(ids)) : java.util.Set.<Long>of();
+        return values.stream().map(value -> new ConversationVO(value,managed.contains(value.getId()))).toList();
     }
 
     @Override public TurnVO getActiveTurn(Long projectId,Long conversationId,Long operatorId) {

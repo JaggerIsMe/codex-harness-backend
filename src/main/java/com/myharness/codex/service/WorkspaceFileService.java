@@ -32,6 +32,15 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 /** Project authorization, durable operations and remote files behind one Interface. */
 @Service
 public class WorkspaceFileService {
+    private com.myharness.codex.mapper.OrchestrationMapper orchestration;
+    private com.myharness.codex.config.OrchestrationProperties orchestrationProperties;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setOrchestration(com.myharness.codex.mapper.OrchestrationMapper mapper,com.myharness.codex.config.OrchestrationProperties properties) {
+        orchestration=mapper;orchestrationProperties=properties;
+    }
+    private boolean orchestrationReserved(Long pid) {
+        return orchestrationProperties!=null && orchestrationProperties.isEnabled() && orchestration.reservedProject(pid)>0;
+    }
     private static final Set<String> MUTATIONS=Set.of("RELOCATE_WORKSPACE_ENTRY","DELETE_WORKSPACE_ENTRY");
     private static final Set<String> ACTIONS=Set.of("RELOCATE_WORKSPACE_ENTRY","DELETE_WORKSPACE_ENTRY","PREPARE_WORKSPACE_DELETE","PREPARE_WORKSPACE_ARCHIVE");
     private static final int MAX_REQUEST_BYTES=512*1024,MAX_ITEMS_BYTES=8*1024*1024;
@@ -220,7 +229,7 @@ public class WorkspaceFileService {
 
     private void assertMutationAdmission(Long pid) {
         assertNoMutation(pid);
-        if(experts.activeTurns(pid)>0) throw new BusinessException(ErrorCode.CONFLICT,"请结束项目中的任务后再修改文件");
+        if(orchestrationReserved(pid) || experts.activeTurns(pid)>0) throw new BusinessException(ErrorCode.CONFLICT,"请结束项目中的任务和编排后再修改文件");
     }
 
     private <T> T projectTransaction(Long pid,Supplier<T> work) {
@@ -614,7 +623,7 @@ public class WorkspaceFileService {
         boolean mutation=supported(p) && d!=null && Boolean.TRUE.equals(d.getWorkspaceFileMutations());
         boolean archive=supported(p) && d!=null && Boolean.TRUE.equals(d.getWorkspaceArchiveDownload());
         String unavailable=!online(p) ? "Agent 离线" : !"ENABLED".equals(p.getWorkspaceStatus()) ? "工作区尚未就绪" : null;
-        boolean occupied=operations.mutationCount(p.getId())>0;
+        boolean occupied=operations.mutationCount(p.getId())>0 || orchestrationReserved(p.getId());
         String mutationReason=unavailable!=null ? unavailable : occupied ? "文件修改处理中或结果待核实" : experts!=null && experts.activeTurns(p.getId())>0 ? "请结束项目中的任务后再修改文件" : null;
         String archiveReason=unavailable!=null ? unavailable : occupied ? "文件修改处理中或结果待核实" : null;
         return new WorkspaceFileCapabilitiesVO(new WorkspaceFileCapabilitiesVO.Capability(mutation,mutation && mutationReason==null,mutation ? mutationReason : "请升级支持安全文件修改的 Agent"),
@@ -762,6 +771,10 @@ public class WorkspaceFileService {
         if(path.isEmpty()) return;
         for(String part:path.split("/",-1)) if(part.isBlank() || part.equals(".") || part.equals("..") || part.length()>255 || part.endsWith(".") || part.endsWith(" ") ||
                 part.chars().anyMatch(c -> c<32 || c==127 || "<>:\"|?*".indexOf(c)>=0) || part.matches("(?i)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\\..*)?")) throw invalid("文件或目录名称无效");
+    }
+    public static void validateReferencePath(String path) {
+        validatePath(path);
+        if(path.isEmpty() || !visiblePath(path))throw invalid("文件引用需为可见的工作区相对文件路径");
     }
     private static void validateCursor(String cursor) {validatePath(cursor);if(cursor.contains("/")) throw invalid("目录游标无效");}
     private Path storage(String key) throws IOException {
