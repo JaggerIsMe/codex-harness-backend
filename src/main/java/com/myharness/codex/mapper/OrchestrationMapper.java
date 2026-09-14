@@ -26,6 +26,11 @@ public interface OrchestrationMapper {
     List<OrchestrationStepPO> steps(Long id);
     @Select("SELECT * FROM orchestration_step WHERE id=#{id}")
     OrchestrationStepPO step(Long id);
+    @Select("SELECT s.turn_id,s.status AS step_status,s.terminal_status,s.checkpoint_json,t.status AS turn_status,t.expert_version_id,t.failure_code,t.failure_message " +
+        "FROM orchestration_step s JOIN conversation_turn t ON t.id=s.turn_id AND t.conversation_id=s.conversation_id WHERE s.id=#{id}")
+    OrchestrationObservationPO observation(Long id);
+    @Select("SELECT * FROM conversation_message WHERE turn_id=#{id} AND role='ASSISTANT' AND message_type='ACTIVITY' AND status='COMPLETED' ORDER BY sequence_no DESC LIMIT 200")
+    List<ConversationMessagePO> outcomeActivities(Long id);
     @Update("UPDATE orchestration_execution SET status=#{status},cancel_requested=IF(#{status}='CANCELING',TRUE,cancel_requested),failure_message=#{reason},updated_at=CURRENT_TIMESTAMP(6) WHERE id=#{id}")
     int status(@Param("id") Long id,@Param("status") String status,@Param("reason") String reason);
     @Update("UPDATE orchestration_execution SET updated_at=CURRENT_TIMESTAMP(6) WHERE id=#{id}")
@@ -36,10 +41,20 @@ public interface OrchestrationMapper {
     int claim(@Param("id") Long id,@Param("previous") String previous,@Param("next") String next,@Param("input") String input);
     @Update("UPDATE orchestration_step s JOIN orchestration_execution e ON e.id=s.execution_id SET s.conversation_id=#{cid},s.status='WAITING_THREAD',s.updated_at=CURRENT_TIMESTAMP(6) WHERE s.id=#{id} AND s.status='CREATING' AND s.conversation_id IS NULL AND e.project_id=#{projectId} AND e.user_id=#{userId} AND e.status='RUNNING'")
     int linkConversation(@Param("id") Long id,@Param("cid") Long cid,@Param("projectId") Long projectId,@Param("userId") Long userId);
-    @Update("UPDATE orchestration_step s JOIN orchestration_execution e ON e.id=s.execution_id SET s.turn_id=#{tid},s.status='RUNNING',s.updated_at=CURRENT_TIMESTAMP(6) WHERE s.id=#{id} AND s.conversation_id=#{cid} AND s.status='DISPATCHING' AND s.turn_id IS NULL AND e.project_id=#{projectId} AND e.user_id=#{userId} AND e.status='RUNNING'")
+    @Update("UPDATE orchestration_step s JOIN orchestration_execution e ON e.id=s.execution_id SET s.turn_id=#{tid},s.status='RUNNING',s.terminal_status=NULL,s.updated_at=CURRENT_TIMESTAMP(6) WHERE s.id=#{id} AND s.conversation_id=#{cid} AND s.status='DISPATCHING' AND (s.turn_id IS NULL OR s.terminal_status='COMPLETED') AND e.project_id=#{projectId} AND e.user_id=#{userId} AND e.status='RUNNING'")
     int linkTurn(@Param("id") Long id,@Param("tid") Long tid,@Param("cid") Long cid,@Param("projectId") Long projectId,@Param("userId") Long userId);
     @Update("UPDATE orchestration_step s JOIN conversation c ON c.id=s.conversation_id SET s.terminal_status=#{status} WHERE s.turn_id=#{turnId} AND c.device_id=#{deviceId} AND c.id=#{conversationId} AND s.terminal_status IS NULL")
     int terminal(@Param("turnId") Long turnId,@Param("conversationId") Long conversationId,@Param("deviceId") Long deviceId,@Param("status") String status);
+    @Insert("INSERT IGNORE INTO orchestration_step_turn(step_id,turn_id) VALUES(#{stepId},#{turnId})")
+    int recordAttempt(@Param("stepId") Long stepId,@Param("turnId") Long turnId);
+    @Select("SELECT COUNT(*) FROM orchestration_step_turn WHERE step_id=#{stepId} AND turn_id=#{turnId}")
+    int hasAttempt(@Param("stepId") Long stepId,@Param("turnId") Long turnId);
+    @Update("UPDATE orchestration_step SET checkpoint_json=#{checkpoint} WHERE turn_id=#{turnId}")
+    int checkpoint(@Param("turnId") Long turnId,@Param("checkpoint") String checkpoint);
+    @Update("UPDATE orchestration_step_turn SET checkpoint_json=#{checkpoint} WHERE turn_id=#{turnId}")
+    int attemptCheckpoint(@Param("turnId") Long turnId,@Param("checkpoint") String checkpoint);
+    @Select("SELECT COUNT(*) FROM approval_request WHERE turn_id=#{id} AND (status='PENDING' OR decision_message_id IS NOT NULL)")
+    int pendingApprovals(Long id);
     @Update("UPDATE orchestration_step SET status='SUCCEEDED',result_json=#{result},failure_message=NULL WHERE id=#{id}")
     int result(@Param("id") Long id,@Param("result") String result);
     @Select("SELECT * FROM conversation_message WHERE turn_id=#{turnId} AND role='ASSISTANT' AND message_type='TEXT' ORDER BY sequence_no DESC LIMIT 200")

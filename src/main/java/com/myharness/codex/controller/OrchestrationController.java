@@ -26,6 +26,16 @@ public class OrchestrationController {
     @PostMapping("/{id}/cancel") public ApiResponseVO<OrchestrationVO> cancel(@PathVariable Long projectId,@PathVariable Long id) {
         return ApiResponseVO.success(service.cancel(projectId,id,UserContext.requireCurrentUser().getId()));
     }
+    @PostMapping("/{id}/steps/{stepId}/continue") public ApiResponseVO<OrchestrationVO> continueStep(
+        @PathVariable Long projectId,@PathVariable Long id,@PathVariable Long stepId,
+        @Valid @RequestBody com.myharness.codex.entity.dto.ContinueOrchestrationStepDTO input) {
+        return ApiResponseVO.success(service.continueStep(projectId,id,stepId,input,UserContext.requireCurrentUser().getId()));
+    }
+    @PostMapping("/{id}/steps/{stepId}/recheck") public ApiResponseVO<OrchestrationVO> recheckStep(
+        @PathVariable Long projectId,@PathVariable Long id,@PathVariable Long stepId,
+        @Valid @RequestBody com.myharness.codex.entity.dto.RecheckOrchestrationStepDTO input) {
+        return ApiResponseVO.success(service.recheckStep(projectId,id,stepId,input,UserContext.requireCurrentUser().getId()));
+    }
     @PostMapping("/{id}/acknowledge-stopped") public ApiResponseVO<OrchestrationVO> acknowledgeStopped(@PathVariable Long projectId,@PathVariable Long id,
         @Valid @RequestBody com.myharness.codex.entity.dto.AcknowledgeOrchestrationStopDTO input) {
         return ApiResponseVO.success(service.acknowledgeStopped(projectId,id,UserContext.requireCurrentUser().getId(),input.confirmedStopped()));

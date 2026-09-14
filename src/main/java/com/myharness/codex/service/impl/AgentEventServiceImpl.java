@@ -246,13 +246,23 @@ public class AgentEventServiceImpl implements AgentEventService {
         }
     }
     private void terminal(Long deviceId, JsonNode payload, String status, String failureCode, LocalDateTime now) {
+        boolean unresolved=approvalMapper.pendingForTurn(id(payload,"turnId"))>0;
         approvalMapper.cancelTurn(id(payload,"turnId"),deviceId,now);
         streams.finish(deviceId,id(payload,"conversationId"),id(payload,"turnId"),status,
                 payload.hasNonNull("lastEventSeq") ? payload.get("lastEventSeq").asLong() : null);
         conversationMapper.finishTurn(id(payload,"turnId"),id(payload,"conversationId"),deviceId,status,failureCode,
                 optionalText(payload,"reason",2000),now);
-        if(orchestrationProperties!=null && orchestrationProperties.isEnabled())
-            orchestration.terminal(id(payload,"turnId"),id(payload,"conversationId"),deviceId,status);
+        if(orchestrationProperties!=null && orchestrationProperties.isEnabled()
+            && orchestration.terminal(id(payload,"turnId"),id(payload,"conversationId"),deviceId,status)==1) {
+            var report=payload.path("orchestration").isObject()
+                ? (com.fasterxml.jackson.databind.node.ObjectNode)payload.path("orchestration").deepCopy()
+                : com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+            report.put("unresolvedApproval",unresolved);
+            String checkpoint=report.toString();
+            if(checkpoint.length()>100000)checkpoint="{\"unresolvedApproval\":true}";
+            orchestration.checkpoint(id(payload,"turnId"),checkpoint);
+            orchestration.attemptCheckpoint(id(payload,"turnId"),checkpoint);
+        }
         ConversationPO conversation=conversationMapper.selectConversation(id(payload,"conversationId"));
         if(conversation!=null && deviceId.equals(conversation.getDeviceId()))
             afterFileCommit(() -> workspaceFiles.refreshProject(conversation.getProjectId(),conversation.getUserId()));

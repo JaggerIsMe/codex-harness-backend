@@ -17,6 +17,23 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
 
 class AgentEventServiceImplTest {
+    @Test void terminalRemembersUnansweredApprovalBeforeCancelingItAndCannotOverwriteNewAttempt() {
+        var devices=mock(AgentDeviceMapper.class);var conversations=mock(ConversationMapper.class);var approvals=mock(ApprovalMapper.class);
+        var orchestration=mock(com.myharness.codex.mapper.OrchestrationMapper.class);
+        var service=new AgentEventServiceImpl(devices,conversations,approvals,mock(ClientEventWebSocketHandler.class),streams,transactions);
+        var settings=new com.myharness.codex.config.OrchestrationProperties();settings.setEnabled(true);service.setOrchestration(orchestration,settings);
+        when(approvals.pendingForTurn(7L)).thenReturn(1);
+        when(orchestration.terminal(7L,5L,3L,"COMPLETED")).thenReturn(1).thenReturn(0);
+        var e=new AgentProtocolEnvelope();e.setType("TURN_COMPLETED");e.setMessageId("node-finished");e.setTimestamp(10L);
+        var payload=new ObjectMapper().createObjectNode().put("conversationId","5").put("turnId","7");
+        payload.putObject("orchestration").put("protocol",1).put("state","COMPLETE").put("summary","完成").put("unresolvedApproval",false);
+        e.setPayload(payload);when(devices.insertEvent(3L,"node-finished","TURN_COMPLETED",10L)).thenReturn(1);
+        service.process(3L,e);service.process(3L,e);
+        var order=inOrder(approvals,orchestration);
+        order.verify(approvals).pendingForTurn(7L);order.verify(approvals).cancelTurn(eq(7L),eq(3L),any());
+        verify(orchestration,times(1)).checkpoint(eq(7L),contains("\"unresolvedApproval\":true"));
+        verify(orchestration,times(1)).attemptCheckpoint(eq(7L),anyString());
+    }
     @Test void everyTerminalOutcomeRequestsProjectSyncAfterPersistence() {
         for(String type:java.util.List.of("TURN_COMPLETED","TURN_FAILED","TURN_INTERRUPTED")) {
             var devices=mock(AgentDeviceMapper.class);var conversations=mock(ConversationMapper.class);

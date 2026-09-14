@@ -68,6 +68,18 @@ class UserSecurityTest {
         when(rbac.permissions(3L)).thenReturn(List.of("system:user:manage"));
         mvc.perform(get("/api/v1/users").servletPath("/api/v1/users").header("Authorization","Bearer "+token)).andExpect(status().isOk());
     }
+    @Test void usageAdministrationIsProtectedAndOwnSummaryUsesAuthenticatedIdentity() throws Exception {
+        String summary="/api/v1/usage/summary";
+        mvc.perform(get(summary).servletPath(summary).header("Authorization","Bearer "+token)).andExpect(status().isOk());
+        verify(context.getBean(com.myharness.codex.service.ModelUsageService.class)).summary(3L,3L);
+        for(String path:List.of("/api/v1/usage/prices","/api/v1/usage/users/4/policy"))
+            mvc.perform(get(path).servletPath(path).header("Authorization","Bearer "+token)).andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/usage/records/request/resolve").servletPath("/api/v1/usage/records/request/resolve")
+            .header("Authorization","Bearer "+token).contentType("application/json").content("{}")).andExpect(status().isForbidden());
+        mvc.perform(get(summary).servletPath(summary)).andExpect(status().isUnauthorized());
+        when(rbac.permissions(3L)).thenReturn(List.of("model:manage"));
+        mvc.perform(get("/api/v1/usage/prices").servletPath("/api/v1/usage/prices").header("Authorization","Bearer "+token)).andExpect(status().isOk());
+    }
     @Test void administratorCanReadExpertManagement() throws Exception {
         when(rbac.permissions(3L)).thenReturn(List.of("expert:manage","expert:read","expert:use"));
         String path="/api/v1/admin/experts";
@@ -220,6 +232,8 @@ class UserSecurityTest {
     }
     @Configuration @EnableWebMvc @EnableWebSecurity @Import(UserSecurityConfig.class)
     static class Config {
+        @Bean com.myharness.codex.service.ModelUsageService usage(){return mock(com.myharness.codex.service.ModelUsageService.class);}
+        @Bean com.myharness.codex.controller.ModelUsageController usageController(com.myharness.codex.service.ModelUsageService usage){return new com.myharness.codex.controller.ModelUsageController(usage);}
         @Bean ObjectMapper json(){return new ObjectMapper();}
         @Bean SysUserMapper users(){return mock(SysUserMapper.class);}
         @Bean RbacMapper rbac(){return mock(RbacMapper.class);}

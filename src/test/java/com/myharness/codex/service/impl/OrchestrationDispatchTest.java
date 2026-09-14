@@ -23,6 +23,10 @@ class OrchestrationDispatchTest {
     ConversationServiceImpl service;
     boolean inTransaction;
     @BeforeEach void setup() {
+        var node=new OrchestrationStepPO();node.setId(5L);node.setExecutionId(1L);node.setPosition(0);
+        when(orchestration.step(5L)).thenReturn(node);
+        var execution=new OrchestrationExecutionPO();execution.setPlanJson("{\"schemaVersion\":2,\"startNodeId\":\"a\",\"nodes\":[{\"id\":\"a\",\"kind\":\"EXPERT\"}]}");
+        when(orchestration.get(1L)).thenReturn(execution);
         var projects=mock(ProjectMapper.class);var devices=mock(AgentDeviceMapper.class);
         var experts=mock(ExpertService.class);var tx=mock(TransactionTemplate.class);
         when(tx.execute(any())).thenAnswer(i->{inTransaction=true;

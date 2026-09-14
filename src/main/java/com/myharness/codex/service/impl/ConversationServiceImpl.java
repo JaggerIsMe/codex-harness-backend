@@ -38,6 +38,9 @@ import java.util.stream.Collectors;
 
 @Service
 public class ConversationServiceImpl implements ConversationService {
+    private com.myharness.codex.service.ModelUsageService modelUsage;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setModelUsage(com.myharness.codex.service.ModelUsageService value){modelUsage=value;}
     private com.myharness.codex.mapper.OrchestrationMapper orchestration;
     private com.myharness.codex.config.OrchestrationProperties orchestrationProperties;
     @org.springframework.beans.factory.annotation.Autowired
@@ -149,8 +152,10 @@ public class ConversationServiceImpl implements ConversationService {
         java.util.concurrent.atomic.AtomicBoolean created=new java.util.concurrent.atomic.AtomicBoolean();
         java.util.concurrent.atomic.AtomicReference<String> threadModelRuntimeKey=new java.util.concurrent.atomic.AtomicReference<>(conversation.getModelRuntimeKey());
         final ConversationTurnPO turn;
+        var nodeControl=new java.util.concurrent.atomic.AtomicReference<com.fasterxml.jackson.databind.JsonNode>();
         try {
             turn=transactions.execute(status -> {
+                if(modelUsage!=null) modelUsage.acquireUser(operatorId);
                 Long projectRevision=experts.lockProject(projectId);
                 ConversationPO locked=conversationMapper.lockConversation(conversationId);
                 if(locked==null || !operatorId.equals(locked.getUserId()) || !projectId.equals(locked.getProjectId()))
@@ -175,6 +180,11 @@ public class ConversationServiceImpl implements ConversationService {
                     throw new BusinessException(ErrorCode.CONFLICT,"项目已有活动 Turn，请等待结束后再执行");
                 if(workspaceFiles!=null) workspaceFiles.assertNoMutation(projectId);
                 AgentDevicePO online=requireOnline(conversation.getDeviceId());
+                if(stepId!=null) {
+                    var step=orchestration.step(stepId);
+                    nodeControl.set(com.myharness.codex.service.WorkflowCompletionGate.command(objectMapper,
+                        orchestration.get(step.getExecutionId()).getPlanJson(),step,orchestration.steps(step.getExecutionId())));
+                }
                 if(!dto.getAttachmentIds().isEmpty() && !Boolean.TRUE.equals(online.getConversationAttachments()))
                     throw new BusinessException(ErrorCode.CONFLICT,"请升级 Agent 以支持会话附件");
                 ConversationTurnPO value=new ConversationTurnPO(); value.setConversationId(conversationId); value.setStatus("CREATED");
@@ -187,9 +197,11 @@ public class ConversationServiceImpl implements ConversationService {
                 value.setClientRequestId(dto.getClientRequestId()); value.setRequestHash(requestHash);
                 value.setPreparationPhase(dto.getAttachmentIds().isEmpty() ? null : "DOWNLOADING");
                 if(!runtime.getSkills().isEmpty()) value.setPreparationPhase("EXPERT_SKILLS");
+                if(modelUsage!=null) modelUsage.checkStart(operatorId,value.getModelConfigurationVersionId());
                 conversationMapper.insertTurn(value);
                 if(stepId!=null && orchestration.linkTurn(stepId,value.getId(),conversationId,projectId,operatorId)!=1)
                     throw new BusinessException(ErrorCode.CONFLICT,"编排步骤不允许派发 Turn");
+                if(stepId!=null) orchestration.recordAttempt(stepId,value.getId());
                 long sequence=conversationMapper.nextSequence(conversationId);
                 conversationMapper.insertMessage(conversationId,value.getId(),sequence,"USER","TEXT",dto.getMessage()==null ? "" : dto.getMessage());
                 attachments.bind(locked,value.getId(),dto.getAttachmentIds());
@@ -214,6 +226,7 @@ public class ConversationServiceImpl implements ConversationService {
         payload.put("message",dto.getMessage()==null ? "" : dto.getMessage());
         if(models!=null)payload.put("modelRuntime",models.runtimeForSnapshot(turn.getModelRuntime()));
         payload.put("expertRuntime",frozenRuntime);
+        if(nodeControl.get()!=null)payload.put("orchestration",nodeControl.get());
         try { gateway.send(conversation.getDeviceCode(),new AgentCommand("START_TURN",String.valueOf(turn.getId()),payload)); }
         catch (RuntimeException exception) {
             conversationMapper.finishTurn(turn.getId(),conversationId,conversation.getDeviceId(),"FAILED","AGENT_OFFLINE",

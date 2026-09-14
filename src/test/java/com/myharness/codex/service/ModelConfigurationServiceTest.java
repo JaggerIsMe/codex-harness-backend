@@ -68,7 +68,7 @@ class ModelConfigurationServiceTest {
 
         assertEquals("******",created.apiKeyMasked());assertEquals(256000,created.runtime().getContextWindowTokens());assertFalse(stored.get().getRuntimeSpec().contains("sk-literal-secret"));assertFalse(stored.get().getEncryptedApiKey().contains("sk-literal-secret"));
         ModelConfigurationVersionPO version=stored.get();version.setStatus("ACTIVE");version.setConfigurationStatus("ENABLED");when(mapper.version(10L)).thenReturn(version);
-        var runtime=service.runtimeForVersion(10L);assertEquals(2,runtime.getSchemaVersion());assertEquals("MANAGED_PROVIDER",runtime.getRuntimeMode());assertEquals("sk-literal-secret",runtime.getApiKey());assertEquals(256000,runtime.getContextWindowTokens());assertFalse(service.snapshot(runtime).contains("sk-literal-secret"));
+        var runtime=service.runtimeForVersion(10L);assertEquals(3,runtime.getSchemaVersion());assertEquals("MANAGED_PROVIDER",runtime.getRuntimeMode());assertEquals("sk-literal-secret",runtime.getApiKey());assertEquals(256000,runtime.getContextWindowTokens());assertFalse(service.snapshot(runtime).contains("sk-literal-secret"));
         assertEquals("sk-literal-secret",service.runtimeForSnapshot(service.snapshot(runtime)).getApiKey());
     }
 

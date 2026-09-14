@@ -19,6 +19,10 @@ public class UserSecurityConfig {
         http.csrf(csrf->csrf.disable()).sessionManagement(s->s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .formLogin(f->f.disable()).httpBasic(b->b.disable()).logout(l->l.disable())
             .authorizeHttpRequests(a->a
+                .requestMatchers(HttpMethod.POST,"/api/v1/agent/turns/*/usage/reserve","/api/v1/agent/turns/*/usage/settle").permitAll()
+                .requestMatchers("/api/v1/usage/prices").hasAuthority("model:manage")
+                .requestMatchers("/api/v1/usage/users/*/policy","/api/v1/usage/records/*/resolve").hasAuthority("system:user:manage")
+                .requestMatchers("/api/v1/usage/**").authenticated()
                 .requestMatchers(HttpMethod.GET,"/api/v1/agent/workspace-file-operations/*","/api/v1/agent/workspace-file-operations/*/content").permitAll()
                 .requestMatchers(HttpMethod.PUT,"/api/v1/agent/workspace-file-operations/*/content","/api/v1/agent/workspace-file-operations/*/items").permitAll()
                 .requestMatchers(HttpMethod.POST, PublicAuthEndpoints.postPaths()).permitAll()

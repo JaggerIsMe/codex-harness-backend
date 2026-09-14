@@ -24,6 +24,7 @@ public class OrchestrationService {
     private static final Set<String> TERMINAL=Set.of("SUCCEEDED","FAILED","CANCELLED");
     private static final Set<String> STEP_TERMINAL=Set.of("SUCCEEDED","FAILED","CANCELLED","SKIPPED");
     private static final Set<String> TURN_ACTIVE=Set.of("CREATED","RUNNING","WAITING_APPROVAL");
+    private static final Set<String> PAUSED=Set.of("WAITING_USER","VALIDATION_FAILED");
     private final OrchestrationMapper mapper;
     private final ProjectMapper projects;
     private final ConversationMapper turns;
@@ -106,6 +107,68 @@ public class OrchestrationService {
         }
         return view(mapper.get(id));
     }
+    public synchronized OrchestrationVO continueStep(Long projectId,Long id,Long stepId,ContinueOrchestrationStepDTO input,Long userId) {
+        requireEnabled();var project=owned(projectId,userId);access.requirePermission(userId,"turn:start");
+        var execution=requireOwned(projectId,id,userId);var step=mapper.step(stepId);
+        if(step==null || !id.equals(step.getExecutionId()) || step.getConversationId()==null)
+            throw new BusinessException(ErrorCode.NOT_FOUND,"节点不存在");
+        var dto=new StartTurnDTO();dto.setMessage(input.message());
+        dto.setClientRequestId(SecureDigests.sha256("node-"+stepId+"-"+input.expectedTurnId()+"-"+input.requestKey()));
+        var previous=turns.byClientRequest(step.getConversationId(),dto.getClientRequestId());
+        if(previous!=null) {
+            if(mapper.hasAttempt(stepId,previous.getId())!=1 || !SecureDigests.sha256(write(dto)).equals(previous.getRequestHash()))
+                throw new BusinessException(ErrorCode.CONFLICT,"发送标识已用于不同内容");
+            return view(execution);
+        }
+        transactions.executeWithoutResult(tx->{
+            experts.lockProject(projectId);owned(projectId,userId);
+            var fresh=mapper.get(id);var selected=mapper.step(stepId);
+            if(TERMINAL.contains(fresh.getStatus()) || fresh.isCancelRequested() || !"RUNNING".equals(fresh.getStatus())
+                || !PAUSED.contains(selected.getStatus()) || !input.expectedTurnId().equals(selected.getTurnId())
+                || !"COMPLETED".equals(selected.getTerminalStatus()))
+                throw new BusinessException(ErrorCode.CONFLICT,"仅当前暂停节点可以补充信息；请刷新执行状态");
+            var current=new WorkflowGraph(readWorkflow(fresh),json).current(mapper.steps(id));
+            if(current==null || !stepId.equals(current.getId()) || mapper.activeProjectTurns(projectId)>0 || mapper.pendingApprovals(selected.getTurnId())>0)
+                throw new BusinessException(ErrorCode.CONFLICT,"节点仍在执行或有待处理审批，请先处理后再继续");
+            if(!gateway.isOnline(project.getDeviceCode()) || mapper.activeDeviceTurns(project.getDeviceId())>=properties.getMaxActiveTurnsPerDevice())
+                throw new BusinessException(ErrorCode.CONFLICT,"设备离线或并发额度已满，请稍后重试");
+            if(mapper.claim(stepId,selected.getStatus(),"DISPATCHING",null)!=1)
+                throw new BusinessException(ErrorCode.CONFLICT,"节点状态已变化，请刷新");
+        });
+        try {conversations.startOrchestrationTurn(projectId,step.getConversationId(),dto,userId,stepId);}
+        catch(RuntimeException failure) {
+            attention(execution,mapper.step(stepId),"续聊派发未确认，未自动重发；请核实步骤会话与设备");throw failure;
+        }
+        notifyChanged(mapper.get(id));return view(mapper.get(id));
+    }
+    public synchronized OrchestrationVO recheckStep(Long projectId,Long id,Long stepId,RecheckOrchestrationStepDTO input,Long userId) {
+        requireEnabled();owned(projectId,userId);access.requirePermission(userId,"turn:start");requireOwned(projectId,id,userId);
+        transactions.executeWithoutResult(tx->{
+            experts.lockProject(projectId);owned(projectId,userId);
+            var e=requireOwned(projectId,id,userId);var selected=mapper.step(stepId);
+            if(selected==null || !id.equals(selected.getExecutionId()))throw new BusinessException(ErrorCode.NOT_FOUND,"节点不存在");
+            if(!input.expectedTurnId().equals(selected.getTurnId()))throw new BusinessException(ErrorCode.CONFLICT,"节点轮次已变化，请刷新");
+            if("SUCCEEDED".equals(selected.getStatus()))return;
+            if(e.isCancelRequested() || !Set.of("RUNNING","NEEDS_ATTENTION").contains(e.getStatus())
+                || !Set.of("WAITING_USER","VALIDATION_FAILED","NEEDS_ATTENTION").contains(selected.getStatus()))
+                throw new BusinessException(ErrorCode.CONFLICT,"仅当前暂停或待核实节点可重新校验");
+            var current=new WorkflowGraph(readWorkflow(e),json).current(mapper.steps(id));
+            var snapshot=mapper.observation(stepId);
+            if(current==null || !stepId.equals(current.getId()) || snapshot==null || !input.expectedTurnId().equals(snapshot.turnId())
+                || !"COMPLETED".equals(snapshot.turnStatus()) || !"COMPLETED".equals(snapshot.terminalStatus())
+                || mapper.activeProjectTurns(projectId)>0 || mapper.pendingApprovals(snapshot.turnId())>0)
+                throw new BusinessException(ErrorCode.CONFLICT,"节点仍在执行、缺少终态或存在未处理审批，不能重新校验");
+            try {
+                var receipt=WorkflowOutcomeRecovery.recover(json,WorkflowCompletionGate.read(json,snapshot.checkpointJson()),
+                    snapshot.turnId(),mapper.outcomeActivities(snapshot.turnId()));
+                receipt.put("recheckedBy",userId).put("recheckedAt",LocalDateTime.now().toString());
+                mapper.checkpoint(snapshot.turnId(),write(receipt));mapper.attemptCheckpoint(snapshot.turnId(),write(receipt));
+            } catch(IllegalArgumentException failure){throw new BusinessException(ErrorCode.CONFLICT,failure.getMessage());}
+            mapper.stepStatus(stepId,"VALIDATING",null);mapper.status(id,"RUNNING",null);
+            observe(mapper.get(id),mapper.step(stepId),false);
+        });
+        notifyChanged(mapper.get(id));return view(mapper.get(id));
+    }
     @Scheduled(fixedDelayString="${harness.orchestration.scan-interval-ms:2000}",initialDelay=5000)
     public synchronized void tick() {
         if(!enabled())return;
@@ -140,7 +203,12 @@ public class OrchestrationService {
             finish(e,"CANCELLED","编排已停止");return;
         }
         boolean cancel=e.isCancelRequested() || "CANCELING".equals(e.getStatus());
-        if(!cancel && e.getCreatedAt().plusMinutes(properties.getExecutionTimeoutMinutes()).isBefore(LocalDateTime.now())) {
+        boolean paused=steps.stream().anyMatch(s->PAUSED.contains(s.getStatus()));
+        var currentTurn=steps.stream().filter(s->s.getTurnId()!=null && !STEP_TERMINAL.contains(s.getStatus()))
+            .map(s->turns.selectTurn(s.getTurnId())).filter(Objects::nonNull).findFirst().orElse(null);
+        var lastProgress=steps.stream().map(OrchestrationStepPO::getUpdatedAt).filter(Objects::nonNull).max(LocalDateTime::compareTo).orElse(e.getCreatedAt());
+        var timeoutFrom=currentTurn!=null && currentTurn.getCreatedAt()!=null?currentTurn.getCreatedAt():lastProgress;
+        if(!cancel && !paused && timeoutFrom.plusMinutes(properties.getExecutionTimeoutMinutes()).isBefore(LocalDateTime.now())) {
             change(e,"CANCELING","编排已超过时限，等待设备停止");cancel=true;
         }
         // Existing active device work is reconciled even for a retired/invalid plan.
@@ -214,24 +282,48 @@ public class OrchestrationService {
         }
     }
     private void observe(OrchestrationExecutionPO e,OrchestrationStepPO step,boolean cancel) {
-        var turn=turns.selectTurn(step.getTurnId());
-        if(turn==null){attention(e,step,"关联 Turn 不存在");return;}
+        var snapshot=mapper.observation(step.getId());
+        if(snapshot==null){attention(e,step,"关联 Turn 不存在");return;}
+        if(!Objects.equals(step.getTurnId(),snapshot.turnId()))return;
+        step.setStatus(snapshot.stepStatus());step.setTerminalStatus(snapshot.terminalStatus());step.setCheckpointJson(snapshot.checkpointJson());
+        var turn=new ConversationTurnPO();turn.setId(snapshot.turnId());turn.setConversationId(step.getConversationId());
+        turn.setStatus(snapshot.turnStatus());turn.setExpertVersionId(snapshot.expertVersionId());
+        turn.setFailureCode(snapshot.failureCode());turn.setFailureMessage(snapshot.failureMessage());
+        if(!cancel && PAUSED.contains(step.getStatus()))return;
+        if(!cancel && "DISPATCHING".equals(step.getStatus())){attention(e,step,"续聊派发未确认，未自动重发；请核实设备");return;}
         if(step.getTerminalStatus()!=null) {
             if(cancel){mapper.stepStatus(step.getId(),"CANCELLED",null);finish(e,"CANCELLED","设备已确认结束");return;}
             if(!"COMPLETED".equals(step.getTerminalStatus()) || !"COMPLETED".equals(turn.getStatus())) {
                 mapper.stepStatus(step.getId(),"FAILED","设备执行未成功完成");finish(e,"FAILED","步骤执行失败或已中断");return;
             }
+            var receipt=WorkflowCompletionGate.read(json,step.getCheckpointJson());
+            if(mapper.pendingApprovals(turn.getId())>0 || receipt.path("unresolvedApproval").asBoolean(false)) {
+                attention(e,step,"本轮结束时仍有未完成的审批或决定。请核实审批记录，不能直接提交节点结果。");return;
+            }
+            if(receipt.path("protocol").asInt()!=1 || !receipt.path("summary").isTextual() || receipt.path("summary").asText().isBlank()
+                || !Set.of("COMPLETE","WAITING_USER").contains(receipt.path("state").asText())) {
+                attention(e,step,"缺少有效的节点回执，请核实 Agent 或重新校验；这不表示需要补充业务信息。");return;
+            }
+            if("WAITING_USER".equals(receipt.path("state").asText())) {
+                String question=receipt.path("summary").asText();
+                mapper.stepStatus(step.getId(),"WAITING_USER",question.substring(0,Math.min(question.length(),1000)));
+                if("RUNNING".equals(e.getStatus()) && e.getFailureMessage()==null)notifyChanged(e);
+                else change(e,"RUNNING",null);
+                return;
+            }
+            mapper.stepStatus(step.getId(),"VALIDATING",null);
             try {
                 var result=OrchestrationResults.result(turn,mapper.messages(turn.getId()));
                 var workflow=readWorkflow(e);
                 if(workflow!=null) {
                     var graph=new WorkflowGraph(workflow,json);
+                    result=WorkflowCompletionGate.validate(graph.node(step),receipt,result);
                     result=graph.output(graph.node(step),result);
-                }
+                } else throw new IllegalArgumentException("工作流定义无效，不能确认完成");
                 mapper.result(step.getId(),write(result));
                 change(e,"RUNNING",null);
                 notifyChanged(e);
-            } catch(IllegalArgumentException failure) {mapper.stepStatus(step.getId(),"FAILED",failure.getMessage());finish(e,"FAILED",failure.getMessage());}
+            } catch(IllegalArgumentException failure) {mapper.stepStatus(step.getId(),"VALIDATION_FAILED",failure.getMessage());notifyChanged(e);}
             return;
         }
         if(cancel) {
@@ -245,7 +337,14 @@ public class OrchestrationService {
             if(!TURN_ACTIVE.contains(turn.getStatus()))attention(e,step,"等待设备结束回执，当前记录不足以确认执行已停止");
             return;
         }
-        if(!TURN_ACTIVE.contains(turn.getStatus())){attention(e,step,"未收到设备确定终态，停止推进；请核实会话与设备");return;}
+        if(!TURN_ACTIVE.contains(turn.getStatus())){
+            String reason="未收到设备确定终态，停止推进；请核实会话与设备";
+            if("FAILED".equals(turn.getStatus()) && turn.getFailureMessage()!=null && !turn.getFailureMessage().isBlank()) {
+                reason="Turn 执行失败，未收到设备终态回执，已停止推进；"
+                    +(turn.getFailureCode()==null?"":turn.getFailureCode()+"：")+turn.getFailureMessage();
+            }
+            attention(e,step,reason.substring(0,Math.min(reason.length(),1000)));return;
+        }
         String next="WAITING_APPROVAL".equals(turn.getStatus())?"WAITING_APPROVAL":"RUNNING";
         if(!next.equals(step.getStatus())){mapper.stepStatus(step.getId(),next,null);notifyChanged(e);}
     }

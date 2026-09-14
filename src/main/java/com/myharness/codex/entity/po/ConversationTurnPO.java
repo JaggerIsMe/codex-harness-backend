@@ -1,6 +1,9 @@
 package com.myharness.codex.entity.po;
 
 public class ConversationTurnPO {
+    private java.time.LocalDateTime createdAt;
+    public java.time.LocalDateTime getCreatedAt(){return createdAt;}
+    public void setCreatedAt(java.time.LocalDateTime value){createdAt=value;}
     private Long modelConfigurationVersionId; private String modelName; private String modelRuntime;
     public Long getModelConfigurationVersionId(){return modelConfigurationVersionId;} public void setModelConfigurationVersionId(Long v){modelConfigurationVersionId=v;}
     public String getModelName(){return modelName;} public void setModelName(String v){modelName=v;}
@@ -28,6 +31,12 @@ public class ConversationTurnPO {
     private Long conversationId;
     private String codexTurnId;
     private String status;
+    private String failureCode;
+    private String failureMessage;
+    public String getFailureCode() { return failureCode; }
+    public void setFailureCode(String value) { failureCode=value; }
+    public String getFailureMessage() { return failureMessage; }
+    public void setFailureMessage(String value) { failureMessage=value; }
     public Long getId() { return id; }
     public void setId(Long value) { id=value; }
     public Long getConversationId() { return conversationId; }

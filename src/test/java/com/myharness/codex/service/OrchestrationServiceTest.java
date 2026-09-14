@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class OrchestrationServiceTest {
     OrchestrationMapper mapper;ProjectMapper projects;ConversationMapper turns;ConversationService conversations;
     ExpertService experts;AuthorizationService access;AgentCommandGateway gateway;OrchestrationProperties settings;
+    ClientEventWebSocketHandler clientEvents;
     OrchestrationService service;OrchestrationExecutionPO execution;OrchestrationStepPO step;ConversationTurnPO turn;
     @BeforeEach void setup() throws Exception {
         mapper=mock(OrchestrationMapper.class);projects=mock(ProjectMapper.class);turns=mock(ConversationMapper.class);
@@ -30,7 +31,8 @@ class OrchestrationServiceTest {
         when(tx.execute(any())).thenAnswer(i->((TransactionCallback<?>)i.getArgument(0)).doInTransaction(mock(org.springframework.transaction.TransactionStatus.class)));
         doAnswer(i->{((java.util.function.Consumer<org.springframework.transaction.TransactionStatus>)i.getArgument(0)).accept(mock(org.springframework.transaction.TransactionStatus.class));return null;})
             .when(tx).executeWithoutResult(any());
-        service=new OrchestrationService(mapper,projects,turns,conversations,experts,access,gateway,settings,tx,new ObjectMapper(),mock(ClientEventWebSocketHandler.class));
+        clientEvents=mock(ClientEventWebSocketHandler.class);
+        service=new OrchestrationService(mapper,projects,turns,conversations,experts,access,gateway,settings,tx,new ObjectMapper(),clientEvents);
         execution=new OrchestrationExecutionPO();execution.setId(1L);execution.setProjectId(2L);execution.setUserId(3L);execution.setDeviceId(4L);
         execution.setTitle("演示");execution.setGoal("实现并验证");execution.setStatus("RUNNING");execution.setCreatedAt(LocalDateTime.now());
         step=new OrchestrationStepPO();step.setId(5L);step.setExecutionId(1L);step.setPosition(0);step.setName("分析");step.setObjective("分析目标");step.setExpertId(8L);step.setStatus("PENDING");
@@ -48,10 +50,130 @@ class OrchestrationServiceTest {
         when(projects.selectOwned(2L,3L)).thenReturn(p);when(gateway.isOnline("device")).thenReturn(true);
         turn=new ConversationTurnPO();turn.setId(7L);turn.setConversationId(6L);turn.setExpertVersionId(9L);turn.setStatus("RUNNING");
         when(turns.selectTurn(7L)).thenReturn(turn);
+        when(mapper.observation(5L)).thenAnswer(i->new OrchestrationObservationPO(step.getTurnId(),step.getStatus(),step.getTerminalStatus(),
+            step.getCheckpointJson(),turn.getStatus(),turn.getExpertVersionId(),turn.getFailureCode(),turn.getFailureMessage()));
+        when(mapper.checkpoint(eq(7L),anyString())).thenAnswer(i->{step.setCheckpointJson(i.getArgument(1));return 1;});
         var c=new ConversationPO();c.setId(6L);c.setDeviceCode("device");c.setStatus("ACTIVE");c.setCodexThreadId("thread");
         when(turns.selectConversation(6L)).thenReturn(c);
     }
     void running(){step.setConversationId(6L);step.setTurnId(7L);step.setStatus("RUNNING");}
+    void completeReceipt(String summary) {
+        var receipt=new ObjectMapper().createObjectNode().put("protocol",1).put("state","COMPLETE")
+            .put("summary",summary).put("unresolvedApproval",false);
+        receipt.putArray("files");step.setCheckpointJson(receipt.toString());
+    }
+    @Test void ordinaryClarificationWithoutCompletionReceiptNeverAdvances() {
+        running();turn.setStatus("COMPLETED");step.setTerminalStatus("COMPLETED");
+        when(mapper.messages(7L)).thenReturn(List.of(message(10L,1L,"已查到 32 个店铺。请指定店铺名称和站点。")));
+        service.tick();service.tick();
+        assertEquals("NEEDS_ATTENTION",step.getStatus());
+        verify(mapper,never()).result(anyLong(),anyString());verifyNoInteractions(conversations);
+    }
+    @Test void pendingApprovalOrUnansweredReportWinsOverCompletion() {
+        running();turn.setStatus("COMPLETED");step.setTerminalStatus("COMPLETED");completeReceipt("已完成");
+        when(mapper.pendingApprovals(7L)).thenReturn(1);service.tick();
+        assertEquals("NEEDS_ATTENTION",step.getStatus());verify(mapper,never()).result(anyLong(),anyString());
+    }
+    @Test void onlyAnExplicitUserQuestionRequestsAnAnswer() {
+        running();turn.setStatus("COMPLETED");step.setTerminalStatus("COMPLETED");
+        step.setCheckpointJson("{\"protocol\":1,\"state\":\"WAITING_USER\",\"summary\":\"请提供目标代码仓库\",\"files\":[],\"unresolvedApproval\":false}");
+        service.tick();service.tick();
+        assertEquals("WAITING_USER",step.getStatus());assertEquals("请提供目标代码仓库",step.getFailureMessage());
+        assertEquals("RUNNING",execution.getStatus());verifyNoInteractions(conversations);
+        verify(clientEvents,times(1)).sendToUser(eq(3L),any());
+    }
+    @Test void committedObservationWinsOverAnOlderSchedulerStepSnapshot() {
+        running();turn.setStatus("COMPLETED");completeReceipt("done");
+        when(mapper.observation(5L)).thenReturn(new OrchestrationObservationPO(7L,"RUNNING","COMPLETED",step.getCheckpointJson(),"COMPLETED",9L,null,null));
+        when(mapper.messages(7L)).thenReturn(List.of(message(10L,1L,"done")));
+        service.tick();assertEquals("SUCCEEDED",step.getStatus());assertEquals("RUNNING",execution.getStatus());
+        verify(mapper,never()).status(eq(1L),eq("NEEDS_ATTENTION"),anyString());
+    }
+    @Test void newCurrentTurnCannotBeCompletedByAnOlderSchedulerSnapshot() {
+        running();
+        when(mapper.observation(5L)).thenReturn(new OrchestrationObservationPO(8L,"RUNNING",null,null,"RUNNING",9L,null,null));
+        service.tick();verify(mapper,never()).result(anyLong(),anyString());verify(mapper,never()).stepStatus(anyLong(),anyString(),nullable(String.class));
+    }
+    @Test void rechecksDroppedOutcomeWithoutSendingAnotherMessageOrReplayingCompletedWork() {
+        running();step.setStatus("WAITING_USER");step.setTerminalStatus("COMPLETED");turn.setStatus("COMPLETED");
+        execution.setStatus("NEEDS_ATTENTION");
+        step.setCheckpointJson("{\"protocol\":1,\"state\":\"WAITING_USER\",\"files\":[],\"unresolvedApproval\":false}");
+        var activity=message(11L,2L,"{\"type\":\"dynamicToolCall\",\"tool\":\"harness_node_outcome\",\"status\":\"completed\",\"success\":true,\"arguments\":{\"state\":\"COMPLETE\",\"summary\":\"done\"}}");
+        activity.setTurnId(7L);activity.setRole("ASSISTANT");activity.setMessageType("ACTIVITY");
+        when(mapper.outcomeActivities(7L)).thenReturn(List.of(activity));
+        when(mapper.messages(7L)).thenReturn(List.of(message(10L,1L,"done")));
+        service.recheckStep(2L,1L,5L,new RecheckOrchestrationStepDTO(7L),3L);
+        service.recheckStep(2L,1L,5L,new RecheckOrchestrationStepDTO(7L),3L);
+        assertEquals("SUCCEEDED",step.getStatus());assertEquals("RUNNING",execution.getStatus());
+        verify(mapper,times(1)).result(eq(5L),anyString());verifyNoInteractions(conversations);verify(gateway,never()).send(anyString(),any());
+        service.tick();assertEquals("SUCCEEDED",execution.getStatus());
+    }
+    @Test void recheckCannotBypassPendingApprovalsCancellationOrStaleTurns() {
+        running();step.setStatus("NEEDS_ATTENTION");step.setTerminalStatus("COMPLETED");turn.setStatus("COMPLETED");completeReceipt("done");
+        assertThrows(BusinessException.class,()->service.recheckStep(2L,1L,5L,new RecheckOrchestrationStepDTO(6L),3L));
+        when(mapper.pendingApprovals(7L)).thenReturn(1);
+        assertThrows(BusinessException.class,()->service.recheckStep(2L,1L,5L,new RecheckOrchestrationStepDTO(7L),3L));
+        when(mapper.pendingApprovals(7L)).thenReturn(0);execution.setCancelRequested(true);
+        assertThrows(BusinessException.class,()->service.recheckStep(2L,1L,5L,new RecheckOrchestrationStepDTO(7L),3L));
+        verify(mapper,never()).result(anyLong(),anyString());verifyNoInteractions(conversations);
+    }
+    @Test void completedExpertsAutomaticallyHandOffAndReachTheEndWithoutUserMessages() throws Exception {
+        running();turn.setStatus("COMPLETED");step.setTerminalStatus("COMPLETED");completeReceipt("source data");
+        var nodes=List.of(new WorkflowDTO.Node("a","EXPERT","查询",8L,"query","b",null,0,0),
+            new WorkflowDTO.Node("b","EXPERT","分析",10L,"analyse","end",null,300,0),
+            new WorkflowDTO.Node("end","END","完成",null,"",null,null,600,0));
+        execution.setPlanJson(new ObjectMapper().writeValueAsString(new WorkflowDTO(2,"a",nodes)));
+        var next=new OrchestrationStepPO();next.setId(6L);next.setExecutionId(1L);next.setPosition(1);next.setName("分析");next.setExpertId(10L);next.setStatus("PENDING");
+        var end=new OrchestrationStepPO();end.setId(8L);end.setExecutionId(1L);end.setPosition(2);end.setName("完成");end.setStatus("PENDING");
+        when(mapper.steps(1L)).thenAnswer(i->List.of(step,next,end));when(mapper.step(6L)).thenReturn(next);
+        when(mapper.messages(7L)).thenReturn(List.of(message(10L,1L,"source data")));
+        when(mapper.claim(eq(6L),anyString(),anyString(),nullable(String.class))).thenAnswer(i->{
+            if(!next.getStatus().equals(i.getArgument(1)))return 0;next.setStatus(i.getArgument(2));return 1;});
+        when(conversations.createOrchestrationConversation(eq(2L),any(),eq(3L),eq(6L))).thenAnswer(i->{next.setStatus("WAITING_THREAD");next.setConversationId(8L);return null;});
+        var conversation=new ConversationPO();conversation.setStatus("ACTIVE");conversation.setCodexThreadId("second-thread");
+        when(turns.selectConversation(8L)).thenReturn(conversation);
+        when(conversations.startOrchestrationTurn(eq(2L),eq(8L),any(),eq(3L),eq(6L))).thenAnswer(i->{next.setStatus("RUNNING");next.setTurnId(9L);return null;});
+        String receipt="{\"protocol\":1,\"state\":\"COMPLETE\",\"summary\":\"analysis done\",\"files\":[],\"unresolvedApproval\":false}";
+        when(mapper.observation(6L)).thenReturn(new OrchestrationObservationPO(9L,"RUNNING","COMPLETED",receipt,"COMPLETED",11L,null,null));
+        when(mapper.messages(9L)).thenReturn(List.of(message(12L,1L,"analysis done")));
+        when(mapper.result(eq(6L),anyString())).thenAnswer(i->{next.setStatus("SUCCEEDED");next.setResultJson(i.getArgument(1));return 1;});
+        when(mapper.result(eq(8L),anyString())).thenAnswer(i->{end.setStatus("SUCCEEDED");return 1;});
+        for(int tick=0;tick<5;tick++)service.tick();
+        assertEquals("SUCCEEDED",execution.getStatus());assertEquals("SUCCEEDED",next.getStatus());assertEquals("SUCCEEDED",end.getStatus());
+        verify(conversations,times(1)).createOrchestrationConversation(eq(2L),any(),eq(3L),eq(6L));
+        verify(conversations,times(1)).startOrchestrationTurn(eq(2L),eq(8L),argThat(input->"analyse".equals(input.getMessage())),eq(3L),eq(6L));
+    }
+    @Test void pausedNodeContinuesSameConversationWithExactUserMessageAndStableRequestId() {
+        running();turn.setStatus("COMPLETED");step.setTerminalStatus("COMPLETED");step.setStatus("WAITING_USER");
+        var input=new ContinueOrchestrationStepDTO(7L,"retry-key","只查询美国 Vantrue 主店");
+        when(conversations.startOrchestrationTurn(eq(2L),eq(6L),any(),eq(3L),eq(5L))).thenAnswer(i->{
+            StartTurnDTO sent=i.getArgument(2);assertEquals(input.message(),sent.getMessage());assertEquals("DISPATCHING",step.getStatus());
+            var next=new ConversationTurnPO();next.setId(8L);next.setRequestHash(com.myharness.codex.security.SecureDigests.sha256(new ObjectMapper().writeValueAsString(sent)));
+            when(turns.byClientRequest(6L,sent.getClientRequestId())).thenReturn(next);when(mapper.hasAttempt(5L,8L)).thenReturn(1);
+            step.setTurnId(8L);step.setTerminalStatus(null);step.setStatus("RUNNING");return null;
+        });
+        service.continueStep(2L,1L,5L,input,3L);service.continueStep(2L,1L,5L,input,3L);
+        verify(conversations,times(1)).startOrchestrationTurn(eq(2L),eq(6L),any(),eq(3L),eq(5L));
+        assertThrows(BusinessException.class,()->service.continueStep(2L,1L,5L,new ContinueOrchestrationStepDTO(7L,"retry-key","其他店铺"),3L));
+    }
+    @Test void completionAndStaleRepliesCannotReopenOrRaceTheCurrentNode() {
+        running();turn.setStatus("COMPLETED");step.setTerminalStatus("COMPLETED");
+        for(String status:List.of("SUCCEEDED","RUNNING","WAITING_APPROVAL")) {
+            step.setStatus(status);
+            assertThrows(BusinessException.class,()->service.continueStep(2L,1L,5L,new ContinueOrchestrationStepDTO(7L,"key","继续"),3L));
+        }
+        step.setStatus("WAITING_USER");
+        assertThrows(BusinessException.class,()->service.continueStep(2L,1L,5L,new ContinueOrchestrationStepDTO(99L,"key","继续"),3L));
+        when(mapper.pendingApprovals(7L)).thenReturn(1);
+        assertThrows(BusinessException.class,()->service.continueStep(2L,1L,5L,new ContinueOrchestrationStepDTO(7L,"key","继续"),3L));
+        verifyNoInteractions(conversations);
+    }
+    @Test void humanWaitingDoesNotExpireAndCancellationDoesNotStartAnotherTurn() {
+        running();turn.setStatus("COMPLETED");step.setTerminalStatus("COMPLETED");step.setStatus("WAITING_USER");
+        execution.setCreatedAt(LocalDateTime.now().minusDays(2));service.tick();
+        assertEquals("WAITING_USER",step.getStatus());service.cancel(2L,1L,3L);
+        assertEquals("CANCELLED",execution.getStatus());verifyNoInteractions(conversations);
+    }
     @Test void entryCompletesWithoutConversationThenDispatchesTheLinkedExpert() throws Exception {
         var start=new WorkflowDTO.Node("start","START","开始",null,"","a",null,0,0);
         var expert=new WorkflowDTO.Node("a","EXPERT","任务",8L,"用户职责",null,null,300,0);
@@ -88,25 +210,43 @@ class OrchestrationServiceTest {
     @Test void persistedCompletionWithoutDeviceReceiptDoesNotAdvance() {
         running();turn.setStatus("COMPLETED");service.tick();assertEquals("NEEDS_ATTENTION",execution.getStatus());verifyNoInteractions(conversations);
     }
+    @Test void commandFailureWithoutTerminalKeepsUnderlyingReasonAndNeverAdvances() {
+        running();turn.setStatus("FAILED");turn.setFailureCode("COMMAND_FAILED");
+        turn.setFailureMessage("Codex method failed: thread/start: Invalid request: dynamic tools must use either canonical or legacy format consistently");
+        service.tick();service.tick();
+        assertEquals("NEEDS_ATTENTION",execution.getStatus());assertEquals("NEEDS_ATTENTION",step.getStatus());
+        assertTrue(step.getFailureMessage().contains(turn.getFailureMessage()));
+        assertTrue(execution.getFailureMessage().contains("COMMAND_FAILED"));
+        assertNull(step.getTerminalStatus());verify(mapper,never()).result(anyLong(),anyString());verifyNoInteractions(conversations);
+    }
+    @Test void longCommandFailureFitsPersistedAttentionReason() {
+        running();turn.setStatus("FAILED");turn.setFailureCode("COMMAND_FAILED");turn.setFailureMessage("x".repeat(2000));
+        service.tick();
+        assertEquals("NEEDS_ATTENTION",execution.getStatus());assertEquals(1000,step.getFailureMessage().length());
+        verifyNoInteractions(conversations);
+    }
     @Test void receiptAndCompleteMessageProduceTraceableResult() {
+        completeReceipt("交付完成，尚有待办");
         running();turn.setStatus("COMPLETED");step.setTerminalStatus("COMPLETED");
         var message=message(10L,1L,"交付完成，尚有待办");
         when(mapper.messages(7L)).thenReturn(List.of(message));service.tick();service.tick();
         assertEquals("SUCCEEDED",execution.getStatus());assertTrue(step.getResultJson().contains("sourceTurnId"));assertTrue(step.getResultJson().contains("尚有待办"));
     }
     @Test void incompleteOutputFailsHandoffEvenWhenTurnCompleted() {
+        completeReceipt("partial");
         running();turn.setStatus("COMPLETED");step.setTerminalStatus("COMPLETED");
         var message=message(10L,1L,"partial");message.setStatus("INCOMPLETE");when(mapper.messages(7L)).thenReturn(List.of(message));
-        service.tick();assertEquals("FAILED",execution.getStatus());
+        service.tick();assertEquals("VALIDATION_FAILED",step.getStatus());
     }
     @Test void completedTurnWithInvalidSchemaOutputNeverCommitsResultOrDispatchesNext() throws Exception {
+        completeReceipt("{\"approved\":\"true\"}");
         var json=new ObjectMapper();
         var node=new WorkflowDTO.Node("a","EXPERT","检查",8L,"用户职责",null,null,0,0,null,
             json.readTree("{\"type\":\"object\",\"properties\":{\"approved\":{\"type\":\"boolean\"}},\"required\":[\"approved\"]}"),null,null);
         execution.setPlanJson(json.writeValueAsString(new WorkflowDTO(3,"a",List.of(node))));
         running();turn.setStatus("COMPLETED");step.setTerminalStatus("COMPLETED");
         when(mapper.messages(7L)).thenReturn(List.of(message(10L,1L,"{\"approved\":\"true\"}")));
-        service.tick();service.tick();assertEquals("FAILED",execution.getStatus());
+        service.tick();service.tick();assertEquals("VALIDATION_FAILED",step.getStatus());
         assertTrue(step.getFailureMessage().contains("Schema"));verify(mapper,never()).result(anyLong(),anyString());verifyNoInteractions(conversations);
     }
     @Test void cancelledIntentSurvivesUnknownStateAndLateSuccess() {

@@ -24,7 +24,7 @@ class OrchestrationMapperMysqlTest {
                 var ds=context.getBean(DataSource.class);
                 try(var connection=ds.getConnection();var sql=connection.createStatement()) {
                     sql.execute("CREATE TEMPORARY TABLE conversation(id BIGINT UNSIGNED PRIMARY KEY,project_id BIGINT UNSIGNED,device_id BIGINT UNSIGNED)");
-                    sql.execute("CREATE TEMPORARY TABLE conversation_turn(id BIGINT UNSIGNED PRIMARY KEY,conversation_id BIGINT UNSIGNED,status VARCHAR(32))");
+                    sql.execute("CREATE TEMPORARY TABLE conversation_turn(id BIGINT UNSIGNED PRIMARY KEY,conversation_id BIGINT UNSIGNED,status VARCHAR(32),expert_version_id BIGINT,failure_code VARCHAR(64),failure_message VARCHAR(2000))");
                     String migration;
                     try(var input=getClass().getResourceAsStream("/db/migration-orchestration.sql")) {
                         migration=new String(input.readAllBytes(),StandardCharsets.UTF_8);
@@ -38,8 +38,15 @@ class OrchestrationMapperMysqlTest {
                     try(var input=getClass().getResourceAsStream("/db/migration-workflow-canvas.sql")) {
                         sql.execute(new String(input.readAllBytes(),StandardCharsets.UTF_8));
                     }
+                    try(var input=getClass().getResourceAsStream("/db/migration-orchestration-continuation.sql")) {
+                        String continuation=new String(input.readAllBytes(),StandardCharsets.UTF_8)
+                            .replace("CREATE TABLE IF NOT EXISTS","CREATE TEMPORARY TABLE")
+                            .replaceAll("(?m)^.*CONSTRAINT fk_step_turn.*\\r?\\n","")
+                            .replaceAll(",\\s*\\) ENGINE",") ENGINE");
+                        for(String statement:continuation.split(";"))if(!statement.isBlank())sql.execute(statement);
+                    }
                     sql.execute("INSERT INTO conversation VALUES(6,2,4)");
-                    sql.execute("INSERT INTO conversation_turn VALUES(7,6,'RUNNING')");
+                    sql.execute("INSERT INTO conversation_turn(id,conversation_id,status) VALUES(7,6,'RUNNING')");
                     connection.setAutoCommit(false);
                     var config=new Configuration(new Environment("temporary",new JdbcTransactionFactory(),ds));
                     config.setMapUnderscoreToCamelCase(true);config.addMapper(OrchestrationMapper.class);
@@ -69,6 +76,22 @@ class OrchestrationMapperMysqlTest {
                         assertEquals(0,mapper.terminal(7L,6L,99L,"COMPLETED"));
                         assertEquals(1,mapper.terminal(7L,6L,4L,"COMPLETED"));assertEquals(0,mapper.terminal(7L,6L,4L,"FAILED"));
                         assertEquals("COMPLETED",mapper.step(step.getId()).getTerminalStatus());
+                        mapper.recordAttempt(step.getId(),7L);
+                        mapper.checkpoint(7L,"{\"state\":\"WAITING_USER\"}");mapper.attemptCheckpoint(7L,"{\"state\":\"WAITING_USER\"}");
+                        sql.execute("UPDATE conversation_turn SET status='COMPLETED',expert_version_id=9 WHERE id=7");
+                        var snapshot=mapper.observation(step.getId());
+                        assertEquals(7L,snapshot.turnId());assertEquals("COMPLETED",snapshot.turnStatus());
+                        assertEquals("COMPLETED",snapshot.terminalStatus());assertEquals(9L,snapshot.expertVersionId());
+                        assertTrue(snapshot.checkpointJson().contains("WAITING_USER"));
+                        mapper.stepStatus(step.getId(),"WAITING_USER",null);
+                        assertEquals(1,mapper.claim(step.getId(),"WAITING_USER","DISPATCHING",null));
+                        sql.execute("INSERT INTO conversation_turn(id,conversation_id,status) VALUES(8,6,'RUNNING')");
+                        assertEquals(1,mapper.linkTurn(step.getId(),8L,6L,2L,3L));mapper.recordAttempt(step.getId(),8L);
+                        assertNull(mapper.step(step.getId()).getTerminalStatus());
+                        assertEquals(0,mapper.terminal(7L,6L,4L,"FAILED"),"Late receipts cannot finish the newer Turn");
+                        assertEquals(1,mapper.hasAttempt(step.getId(),7L));assertEquals(1,mapper.hasAttempt(step.getId(),8L));
+                        assertTrue(mapper.step(step.getId()).getCheckpointJson().contains("WAITING_USER"));
+                        sql.execute("UPDATE conversation_turn SET status='COMPLETED' WHERE id=7");
                         assertEquals(1,mapper.activeDeviceTurns(4L));assertEquals(1,mapper.managedConversation(6L));
                         mapper.status(execution.getId(),"CANCELING","stop");mapper.status(execution.getId(),"NEEDS_ATTENTION","uncertain");
                         assertTrue(mapper.get(execution.getId()).isCancelRequested());

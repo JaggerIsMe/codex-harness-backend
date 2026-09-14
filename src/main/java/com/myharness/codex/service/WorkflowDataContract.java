@@ -110,7 +110,7 @@ public final class WorkflowDataContract {
     public OrchestrationStepResultVO output(Node n,OrchestrationStepResultVO result) {
         JsonNode value=null;
         if(schema(n)){value=parse(result.summary(),"最终输出");WorkflowOutputSchema.validate(n.outputSchema(),value);}
-        return new OrchestrationStepResultVO(configured(n)?2:result.schemaVersion(),result.summary(),result.sourceMessageIds(),
+        return new OrchestrationStepResultVO(Math.max(configured(n)?2:1,result.schemaVersion()),result.summary(),result.sourceMessageIds(),
             result.sourceTurnId(),result.expertVersionId(),result.truncated(),value,List.copyOf(list(n.outputFiles())));
     }
     private JsonNode parse(String text,String label) {

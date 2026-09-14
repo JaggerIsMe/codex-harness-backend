@@ -1,6 +1,9 @@
 package com.myharness.codex.entity.po;
 
 public class OrchestrationStepPO {
+    private String checkpointJson;
+    public String getCheckpointJson(){return checkpointJson;}
+    public void setCheckpointJson(String value){checkpointJson=value;}
     private Long id;
     public Long getId(){return id;}
     public void setId(Long value){id=value;}
