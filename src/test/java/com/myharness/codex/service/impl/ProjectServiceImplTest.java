@@ -65,6 +65,12 @@ class ProjectServiceImplTest {
         assertEquals("WINDOWS_LPAC_SKILL_V2",project.getIsolationMode());
         verify(gateway).send(eq("device-2"),any());
     }
+    @Test void publicApiWindowsDeviceCanProvisionProject() {
+        devices.selectById(2L).setIsolationMode("WINDOWS_LPAC_API_V3");
+        service.createProject(dto(),3L);
+        assertEquals("WINDOWS_LPAC_API_V3",project.getIsolationMode());
+        verify(gateway).send(eq("device-2"),any());
+    }
     @Test void sameMachineAndDisplayNameStillAllocateDifferentUserDirectories() {
         service.createProject(dto(),3L);String first=workspace.getWorkspaceName();
         when(projects.selectOwned(7L,9L)).thenAnswer(i->project);

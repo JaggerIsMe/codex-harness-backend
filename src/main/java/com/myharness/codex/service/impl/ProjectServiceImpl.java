@@ -96,7 +96,7 @@ public class ProjectServiceImpl implements ProjectService {
         AgentDevicePO device=devices.selectById(id);
         if(device==null || !"ONLINE".equals(device.getStatus()) || !gateway.isOnline(device.getDeviceCode()))
             throw new BusinessException(ErrorCode.AGENT_OFFLINE);
-        if(!"LINUX_PROJECT_SKILL_V2".equals(device.getIsolationMode()) && !"WINDOWS_LPAC_SKILL_V2".equals(device.getIsolationMode()))
+        if(!"LINUX_PROJECT_SKILL_V2".equals(device.getIsolationMode()) && !"WINDOWS_LPAC_SKILL_V2".equals(device.getIsolationMode()) && !"WINDOWS_LPAC_API_V3".equals(device.getIsolationMode()))
             throw new BusinessException(ErrorCode.CONFLICT,"当前设备尚未通过读取隔离自检，请配置 Windows 原生隔离或 Linux 隔离 Agent");
         return device;
     }

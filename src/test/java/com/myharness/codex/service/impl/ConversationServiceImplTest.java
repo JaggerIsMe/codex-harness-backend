@@ -141,8 +141,9 @@ class ConversationServiceImplTest {
         org.mockito.Mockito.verifyNoInteractions(gateway);
     }
 
-    @Test
-    void sendsPersistedConversationBindingWithEveryTurnForAgentRecovery() {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"LINUX_PROJECT_SKILL_V2","WINDOWS_LPAC_API_V3"})
+    void sendsPersistedConversationBindingWithEveryTurnForAgentRecovery(String isolationMode) {
         var project=new com.myharness.codex.entity.po.ProjectPO();
         project.setId(5L);project.setDeviceId(2L);project.setStatus("ACTIVE");project.setWorkspaceStatus("ENABLED");project.setRootPath("D:/allowed");
         when(projectMapper.selectOwned(5L,3L)).thenReturn(project);
@@ -152,7 +153,7 @@ class ConversationServiceImplTest {
         conversation.setDeviceCode("device-1");
         when(conversationMapper.selectOwnedConversation(5L, 2L, 3L)).thenReturn(conversation);
         var device = new com.myharness.codex.entity.po.AgentDevicePO();
-        device.setDeviceCode("device-1"); device.setStatus("ONLINE"); device.setIsolationMode("LINUX_PROJECT_SKILL_V2");
+        device.setDeviceCode("device-1"); device.setStatus("ONLINE"); device.setIsolationMode(isolationMode);
         when(deviceMapper.selectById(2L)).thenReturn(device);
         when(gateway.isOnline("device-1")).thenReturn(true);
         var turn = new ConversationTurnPO();
