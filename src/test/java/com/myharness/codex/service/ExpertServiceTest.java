@@ -165,7 +165,7 @@ class ExpertServiceTest {
         assertThrows(BusinessException.class,()->service.save(null,input,2L));verify(mapper,never()).insert(any());
     }
 
-    @Test void frozenRuntimeIncludesPinnedMcpVersionAndRequiresV4DeviceCapability() {
+    @Test void frozenRuntimeIncludesPinnedMcpVersionAndUsesReadOnlyProtocol() {
         var runtime=new McpRuntimeDTO();runtime.setConfigurationId(7L);runtime.setConfigurationVersionId(70L);
         runtime.setServerCode("github");runtime.setConfigDigest("b".repeat(64));runtime.setTransportType("STDIO");runtime.setCommand("npx");
         when(mcp.runtimes(List.of(70L))).thenReturn(List.of(runtime));versions.get(100L).setMcpVersionIds("[70]");
@@ -175,7 +175,7 @@ class ExpertServiceTest {
 
         var frozen=service.freeze(c,4L);
 
-        assertEquals(4,frozen.getSchemaVersion());assertEquals(70L,frozen.getMcpServers().getFirst().getConfigurationVersionId());
+        assertEquals(5,frozen.getSchemaVersion());assertEquals(70L,frozen.getMcpServers().getFirst().getConfigurationVersionId());
         assertEquals(64,frozen.getRuntimeKey().length());
     }
 

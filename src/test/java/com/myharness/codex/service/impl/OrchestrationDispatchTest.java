@@ -37,7 +37,7 @@ class OrchestrationDispatchTest {
         var settings=new OrchestrationProperties();settings.setEnabled(true);service.setOrchestration(orchestration,settings);
         var project=new ProjectPO();project.setId(2L);project.setUserId(3L);project.setDeviceId(4L);project.setWorkspaceId(9L);
         project.setStatus("ACTIVE");project.setWorkspaceStatus("ENABLED");project.setRootPath("D:/project");when(projects.selectOwned(2L,3L)).thenReturn(project);
-        var device=new AgentDevicePO();device.setId(4L);device.setStatus("ONLINE");device.setIsolationMode("WINDOWS_LPAC_V1");device.setDeviceCode("device");
+        var device=new AgentDevicePO();device.setId(4L);device.setStatus("ONLINE");device.setIsolationMode("WINDOWS_LPAC_SKILL_V2");device.setDeviceCode("device");
         when(devices.selectById(4L)).thenReturn(device);when(gateway.isOnline("device")).thenReturn(true);
         var workspace=new AgentWorkspacePO();workspace.setId(9L);workspace.setStatus("ENABLED");workspace.setWorkspaceName("workspace");when(devices.selectWorkspace(9L,4L)).thenReturn(workspace);
         var conversation=new ConversationPO();conversation.setId(6L);conversation.setUserId(3L);conversation.setProjectId(2L);

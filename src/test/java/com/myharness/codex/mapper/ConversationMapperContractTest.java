@@ -22,7 +22,7 @@ class ConversationMapperContractTest {
                 String.class,String.class,String.class,LocalDateTime.class);
         var sql=String.join(" ",method.getAnnotation(Update.class).value()).replaceAll("\\s+","");
 
-        assertThat(sql).contains("schemaVersion')IN(2,3,"+new ExpertRuntimeDTO().getSchemaVersion()+")");
+        assertThat(sql).contains("schemaVersion')IN(2,3,4,"+new ExpertRuntimeDTO().getSchemaVersion()+")");
     }
 
     @Test
@@ -31,6 +31,6 @@ class ConversationMapperContractTest {
                 String.class,String.class,String.class,LocalDateTime.class);
         var sql=String.join(" ",method.getAnnotation(Update.class).value()).replaceAll("\\s+","");
 
-        assertThat(sql).contains("schemaVersion')IN(3,"+new ExpertRuntimeDTO().getSchemaVersion()+")");
+        assertThat(sql).contains("schemaVersion')IN(3,4,"+new ExpertRuntimeDTO().getSchemaVersion()+")");
     }
 }

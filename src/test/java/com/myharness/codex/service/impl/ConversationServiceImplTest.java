@@ -152,7 +152,7 @@ class ConversationServiceImplTest {
         conversation.setDeviceCode("device-1");
         when(conversationMapper.selectOwnedConversation(5L, 2L, 3L)).thenReturn(conversation);
         var device = new com.myharness.codex.entity.po.AgentDevicePO();
-        device.setDeviceCode("device-1"); device.setStatus("ONLINE"); device.setIsolationMode("LINUX_PROJECT_PROFILE_V1");
+        device.setDeviceCode("device-1"); device.setStatus("ONLINE"); device.setIsolationMode("LINUX_PROJECT_SKILL_V2");
         when(deviceMapper.selectById(2L)).thenReturn(device);
         when(gateway.isOnline("device-1")).thenReturn(true);
         var turn = new ConversationTurnPO();

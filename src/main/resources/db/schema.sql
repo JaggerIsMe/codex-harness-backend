@@ -116,7 +116,7 @@ CREATE TABLE IF NOT EXISTS `agent_device` (
     `agent_version` VARCHAR(64) NULL COMMENT 'Last reported Harness Agent version',
     `os_name` VARCHAR(128) NULL COMMENT 'Last reported operating system name',
     `os_version` VARCHAR(128) NULL COMMENT 'Last reported operating system version',
-    `isolation_mode` VARCHAR(32) NOT NULL DEFAULT 'UNKNOWN' COMMENT 'UNKNOWN/UNSUPPORTED/LINUX_PROJECT_PROFILE_V1/WINDOWS_LPAC_V1',
+    `isolation_mode` VARCHAR(32) NOT NULL DEFAULT 'UNKNOWN' COMMENT 'UNKNOWN/UNSUPPORTED/LINUX_PROJECT_SKILL_V2/WINDOWS_LPAC_SKILL_V2',
     `last_heartbeat_at` DATETIME(3) NULL COMMENT 'Last accepted heartbeat time (UTC)',
     `registered_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT 'Registration time (UTC)',
     `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),

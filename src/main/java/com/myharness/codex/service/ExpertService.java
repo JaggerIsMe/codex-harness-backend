@@ -173,7 +173,7 @@ public class ExpertService {
             skill.setDownloadUrl(properties.getPublicBaseUrl().replaceAll("/+$", "")+"/api/v1/agent/skill-versions/"+v.getId()+"/download"); return skill;
         }).toList());
         result.setMcpServers(selectedMcp);
-        result.setRuntimeKey(com.myharness.codex.security.SecureDigests.sha256("expert-runtime-v4:"+c.getId()+":"
+        result.setRuntimeKey(com.myharness.codex.security.SecureDigests.sha256("expert-runtime-v5:"+c.getId()+":"
                 +result.getExpertVersionId()+":"
                 +selectedSkills.stream().map(v->v.getId()+":"+v.getSha256()).sorted().collect(java.util.stream.Collectors.joining(","))+":"
                 +selectedMcp.stream().map(v->v.getConfigurationVersionId()+":"+v.getConfigDigest()).sorted().collect(java.util.stream.Collectors.joining(","))));
