@@ -92,7 +92,7 @@ class WorkspaceFileHttpSecurityTest {
                 .andExpect(header().string("Cache-Control","no-store")).andExpect(header().string("X-Content-Type-Options","nosniff"));
         mvc.perform(get(USER).servletPath(USER).header("Authorization","Bearer device-token")).andExpect(status().isUnauthorized());
     }
-    @Test void previewRechecksOwnershipStateHiddenPathsAndAssignment() throws Exception {
+    @Test void previewAllowsUserDotfilesAndRechecksOwnershipStateAndAssignment() throws Exception {
         String preview=USER.replace("/content","/preview");
         op.setKind("PREPARE_WORKSPACE_DOWNLOAD");op.setStatus("SUCCEEDED");
         mvc.perform(get(preview).servletPath(preview).header("Authorization","Bearer user-token"))
@@ -107,7 +107,7 @@ class WorkspaceFileHttpSecurityTest {
         op.setStatus("SUCCEEDED");
         for(String path:List.of(".git/config","docs/.CODEX/config",".harness/out.txt",".agent/a",".agents/skill.md")) {
             op.setPath(path);
-            mvc.perform(get(preview).servletPath(preview).header("Authorization","Bearer user-token")).andExpect(status().isBadRequest());
+            mvc.perform(get(preview).servletPath(preview).header("Authorization","Bearer user-token")).andExpect(status().isOk());
         }
         op.setPath("报告.txt");
         doThrow(new BusinessException(ErrorCode.FORBIDDEN)).when(access).requireDevice(3L,4L);

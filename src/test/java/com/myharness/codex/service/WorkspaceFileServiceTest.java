@@ -82,6 +82,15 @@ class WorkspaceFileServiceTest {
         var cached=service.directory(2L,1L,"","",false);
         assertTrue(cached.loaded());assertEquals("1",cached.generation());assertEquals("FAILED",cached.operation().status());
     }
+    @Test void createsFormerlyHiddenDirectoriesThroughTheUserService() {
+        for(String path:List.of(".git",".agents","docs/.CODEX",".harness")) {
+            var request=new com.myharness.codex.entity.dto.WorkspaceFileRequestDTO(path,UUID.randomUUID().toString());
+            var result=service.createDirectory(2L,1L,request);
+            assertEquals(path,result.path());assertEquals("CREATE_WORKSPACE_DIRECTORY",result.kind());
+            assertEquals(result.id(),service.createDirectory(2L,1L,request).id());
+        }
+        assertEquals(4,rows.size());
+    }
     @Test void uploadIsIdempotentAndDoesNotBecomeReadyBeforeAgentResult() throws Exception {
         String key=UUID.randomUUID().toString();
         var file=new MockMultipartFile("file","报告.txt","text/plain","hello".getBytes());
@@ -95,30 +104,29 @@ class WorkspaceFileServiceTest {
         assertEquals("SUCCEEDED",service.operation(2L,1L,1L).status());
         assertEquals("docs/报告.txt",op.getPath());
     }
-    @Test void filtersOldCacheEvenOfflineAndDoesNotResyncInternalDirectories() throws Exception {
+    @Test void preservesDotfilesInCacheAndResyncsTheirDirectories() throws Exception {
         List<WorkspaceFileEntryVO> entries=List.of(".CODEX", ".agent", ".agents", ".git", ".gitignore", ".harness", ".harness-upload-test.part", ".harness-workspace.json")
                 .stream().map(name -> new WorkspaceFileEntryVO(name,name,"FILE",1,10)).toList();
         cache.put("\n",new ObjectMapper().writeValueAsString(new WorkspaceDirectoryVO("","1",20,entries,".harness-workspace.json",true,true,true,null,100)));
         when(gateway.isOnline("device")).thenReturn(false);
         var tree=service.directory(2L,1L,"","",false);
-        assertTrue(tree.loaded());assertEquals(List.of(".gitignore"),tree.entries().stream().map(WorkspaceFileEntryVO::name).toList());
+        assertTrue(tree.loaded());assertEquals(entries,tree.entries());
         assertEquals(".harness-workspace.json",tree.nextCursor()); // Preserve progress through old pages.
-        assertThrows(BusinessException.class,() -> service.directory(2L,1L,"docs/.AGENT/nested","",true));
+        assertDoesNotThrow(() -> service.directory(2L,1L,"docs/.AGENT/nested","",false));
         when(gateway.isOnline("device")).thenReturn(true);
         when(sets.members(anyString())).thenReturn(Set.of("docs", "docs/.AGENT/nested", ".git"));
         service.refreshProject(2L,1L);service.dispatch();
-        assertEquals(Set.of("","docs"),new HashSet<>(rows.values().stream().map(WorkspaceFileOperationPO::getPath).toList()));
-        verify(sets).remove(anyString(),eq(".git"));
-        verify(sets).remove(anyString(),eq("docs/.AGENT/nested"));
+        assertEquals(Set.of("","docs","docs/.AGENT/nested",".git"),new HashSet<>(rows.values().stream().map(WorkspaceFileOperationPO::getPath).toList()));
+        verify(sets,never()).remove(anyString(),any());
     }
-    @Test void filtersResultsFromOlderAgentsBeforeCaching() {
+    @Test void preservesDotfilesInAgentResultsBeforeCaching() {
         service.directory(2L,1L,"docs","",true);service.dispatch();
         var entries=List.of(new WorkspaceFileEntryVO(".git","docs/.git","FILE",1,10),
                 new WorkspaceFileEntryVO("report.txt","docs/report.txt","FILE",1,10));
         service.result(4L,new WorkspaceFileResultDTO("1",true,null,entries,null,20,0,null));
         assertEquals("SUCCEEDED",rows.get(1L).getStatus());
-        assertFalse(cache.get("docs\n").toString().contains("docs/.git"));
-        assertEquals(List.of("report.txt"),service.directory(2L,1L,"docs","",false).entries().stream().map(WorkspaceFileEntryVO::name).toList());
+        assertTrue(cache.get("docs\n").toString().contains("docs/.git"));
+        assertEquals(List.of(".git","report.txt"),service.directory(2L,1L,"docs","",false).entries().stream().map(WorkspaceFileEntryVO::name).toList());
     }
     @Test void verifiesProjectOwnershipAtEveryFileAccess() throws Exception {
         assertThrows(BusinessException.class,() -> service.directory(2L,99L,"","",false));

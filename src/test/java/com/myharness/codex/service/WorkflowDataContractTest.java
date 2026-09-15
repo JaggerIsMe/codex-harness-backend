@@ -59,8 +59,12 @@ class WorkflowDataContractTest {
         data.validate(n,id->source());assertEquals("docs/report.md\ndocs/final.md",data.message(n,"goal",id->saved));
         assertThrows(IllegalArgumentException.class,()->data.message(n,"goal",id->result("done")));
     }
-    @Test void pathsCannotEscapeWorkspaceOrReferenceProtectedLocations() {
-        for(String path:List.of("../secret","C:/secret","/etc/passwd","a\\b",".codex/auth.json","x/.git/config",".harness-upload-token","a/CON.txt","https://example.com/x","")) {
+    @Test void pathsCannotEscapeWorkspaceButCanReferenceUserDotfiles() {
+        for(String path:List.of(".codex/auth.json","x/.git/config",".harness-upload-token")) {
+            var n=node("a","task",null,null,List.of(new FileReference("file",path,null,null)),null);
+            assertDoesNotThrow(()->data.validate(n,id->source()));
+        }
+        for(String path:List.of("../secret","C:/secret","/etc/passwd","a\\b","a/CON.txt","https://example.com/x","")) {
             var n=node("a","task",null,null,List.of(new FileReference("file",path,null,null)),null);
             assertThrows(IllegalArgumentException.class,()->data.validate(n,id->source()),path);
         }

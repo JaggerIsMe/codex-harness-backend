@@ -56,7 +56,6 @@ public class WorkspaceFileService {
             this.resultTransactions.setPropagationBehavior(org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         } else this.resultTransactions=transactions;
     }
-    private static final Set<String> HIDDEN_NAMES = Set.of(".codex", ".git", ".harness", ".agent", ".agents", ".harness-workspace.json");
     private final ProjectMapper projects;
     private final AgentDeviceMapper devices;
     private final WorkspaceFileOperationMapper operations;
@@ -79,7 +78,6 @@ public class WorkspaceFileService {
 
     public WorkspaceDirectoryVO directory(Long pid,Long uid,String path,String cursor,boolean refresh) {
         ProjectPO p=owned(pid,uid,false); validatePath(path); validateCursor(cursor);
-        if (!visiblePath(path)) throw invalid("内部目录不在工作区目录树中展示");
         remember(pid,path);
         var op=operations.latest(pid,path,cursor);
         WorkspaceDirectoryVO cached=readCache(pid,path,cursor);
@@ -95,7 +93,7 @@ public class WorkspaceFileService {
     }
 
     public WorkspaceFileOperationVO rename(Long pid,Long uid,WorkspaceFileActionRequestDTO r) {
-        protectedPath(r.path(),false);protectedPath(r.name(),false);revision(r.expectedRevision());
+        validateOperationPath(r.path(),false);validateOperationPath(r.name(),false);revision(r.expectedRevision());
         if(r.name().contains("/")) throw invalid("重命名只能输入名称");
         String target=join(parent(r.path()),r.name());
         if(target.equals(r.path())) throw invalid("文件名称未改变");
@@ -103,14 +101,14 @@ public class WorkspaceFileService {
     }
 
     public WorkspaceFileOperationVO move(Long pid,Long uid,WorkspaceFileActionRequestDTO r) {
-        protectedPath(r.path(),false);protectedPath(r.targetDirectory(),true);revision(r.expectedRevision());
+        validateOperationPath(r.path(),false);validateOperationPath(r.targetDirectory(),true);revision(r.expectedRevision());
         String target=join(r.targetDirectory(),r.path().substring(r.path().lastIndexOf('/')+1));
         if(target.equals(r.path())) throw invalid("目标目录与当前目录相同");
         return action(pid,uid,"MOVE","RELOCATE_WORKSPACE_ENTRY",r,r.path(),target,null);
     }
 
     public WorkspaceFileOperationVO deletePlan(Long pid,Long uid,WorkspaceFileActionRequestDTO r) {
-        protectedPath(r.path(),false);revision(r.expectedRevision());
+        validateOperationPath(r.path(),false);revision(r.expectedRevision());
         return action(pid,uid,"DELETE_PLAN","PREPARE_WORKSPACE_DELETE",r,r.path(),null,null);
     }
 
@@ -135,7 +133,7 @@ public class WorkspaceFileService {
         if(r.items()==null || r.items().isEmpty() || r.items().size()>properties.getMaxArchiveFiles()) throw invalid("所选文件数量超过限制或未选择文件");
         var unique=new TreeMap<String,WorkspaceFileActionRequestDTO.Item>();var portable=new HashSet<String>();
         for(var item:r.items()) {
-            if(item==null) throw invalid("所选文件无效");protectedPath(item.path(),false);revision(item.expectedRevision());
+            if(item==null) throw invalid("所选文件无效");validateOperationPath(item.path(),false);revision(item.expectedRevision());
             var prior=unique.putIfAbsent(item.path(),item);
             if(prior!=null && !prior.expectedRevision().equals(item.expectedRevision())) throw invalid("同一文件有不同版本，请刷新目录");
             if(prior==null && !portable.add(item.path().toLowerCase(Locale.ROOT))) throw invalid("所选文件存在大小写路径冲突");
@@ -239,14 +237,14 @@ public class WorkspaceFileService {
 
     public WorkspaceFileOperationVO createDirectory(Long pid,Long uid,WorkspaceFileRequestDTO request) {
         ProjectPO p=owned(pid,uid,true); requireReady(p); validatePath(request.path());
-        protectedPath(request.path(),false);assertNoMutation(pid);
+        validateOperationPath(request.path(),false);assertNoMutation(pid);
         if(request.path().isEmpty()) throw invalid("不能创建工作区根目录");
         return new WorkspaceFileOperationVO(create(p,"CREATE_WORKSPACE_DIRECTORY",request.path(),"",request.requestKey(),null,0,null,null));
     }
 
     public WorkspaceFileOperationVO download(Long pid,Long uid,WorkspaceFileRequestDTO request) {
         ProjectPO p=owned(pid,uid,false); requireReady(p); validatePath(request.path());
-        protectedPath(request.path(),false);assertNoMutation(pid);
+        validateOperationPath(request.path(),false);assertNoMutation(pid);
         if(request.path().isEmpty()) throw invalid("请选择文件");
         return new WorkspaceFileOperationVO(create(p,"PREPARE_WORKSPACE_DOWNLOAD",request.path(),"",request.requestKey(),UUID.randomUUID().toString(),0,null,null));
     }
@@ -256,7 +254,7 @@ public class WorkspaceFileService {
         String name=file.getOriginalFilename(); validatePath(name);
         if(name==null || name.isEmpty() || name.contains("/")) throw invalid("文件名无效");
         String path=parent.isEmpty() ? name : parent+"/"+name; validatePath(path);
-        protectedPath(path,false);assertNoMutation(pid);
+        validateOperationPath(path,false);assertNoMutation(pid);
         String key=UUID.randomUUID().toString(); Path target=storage(key);
         try {
             Content content=store(file.getInputStream(),target,properties.getMaxFileBytes());
@@ -269,7 +267,7 @@ public class WorkspaceFileService {
     public WorkspaceFileOperationVO uploadAttachment(ConversationAttachmentPO attachment) {
         ProjectPO p=owned(attachment.getProjectId(),attachment.getUserId(),true); requireReady(p);
         validatePath(attachment.getFileName());
-        protectedPath(attachment.getFileName(),false);assertNoMutation(p.getId());
+        validateOperationPath(attachment.getFileName(),false);assertNoMutation(p.getId());
         return new WorkspaceFileOperationVO(create(p,"UPLOAD_WORKSPACE_FILE",attachment.getFileName(),"",UUID.randomUUID().toString(),
                 attachment.getStorageKey(),attachment.getSizeBytes(),attachment.getSha256(),attachment.getId()));
     }
@@ -297,7 +295,7 @@ public class WorkspaceFileService {
         var op=requireOperation(pid,id);
         if(!"PREPARE_WORKSPACE_DOWNLOAD".equals(op.getKind()) || !"SUCCEEDED".equals(op.getStatus())) throw invalid("预览尚未就绪或已过期");
         validatePath(op.getPath());
-        if(!visiblePath(op.getPath())) throw invalid("内部文件不支持预览");
+        validateReferencePath(op.getPath());
         return new WorkspaceFileSnapshotDTO(id.toString(),op.getPath(),op.getSha256(),op.getUpdatedAt(),contentFile(op));
     }
 
@@ -426,7 +424,7 @@ public class WorkspaceFileService {
         if(manifest.items()!=null) manifest.items().forEach(i -> selected.add(i.path()));
         var paths=new HashSet<String>();
         for(var item:items) {
-            if(item==null) throw invalid("文件结果明细无效");protectedPath(item.path(),false);
+            if(item==null) throw invalid("文件结果明细无效");validateOperationPath(item.path(),false);
             if(!paths.add(item.path()) || !Set.of("FILE","DIRECTORY").contains(Objects.toString(item.entryType(),"")) ||
                     !Set.of("DELETED","REMAINING","UNKNOWN","ARCHIVED","FAILED").contains(Objects.toString(item.status(),"")) ||
                     item.code()!=null && (item.code().length()>64 || !item.code().matches("[A-Z0-9_]+")) || item.error()!=null && item.error().length()>1000) throw invalid("文件结果明细无效");
@@ -467,7 +465,7 @@ public class WorkspaceFileService {
                         for(Object key:keys) if(key.toString().startsWith(op.getPath()+"\n") && !key.equals(field(op.getPath(),"")))
                             redis.opsForHash().delete(cacheKey(op.getProjectId()),key);
                     }
-                    var cached=new WorkspaceDirectoryVO(op.getPath(),id.toString(),result.scannedAt(),visibleEntries(result.entries()),result.nextCursor(),true,true,true,null,properties.getMaxFileBytes());
+                    var cached=new WorkspaceDirectoryVO(op.getPath(),id.toString(),result.scannedAt(),result.entries(),result.nextCursor(),true,true,true,null,properties.getMaxFileBytes());
                     redis.opsForHash().put(cacheKey(op.getProjectId()),field(op.getPath(),op.getCursor()),json.writeValueAsString(cached));
                     redis.expire(cacheKey(op.getProjectId()),Duration.ofDays(7));
                 }
@@ -528,8 +526,8 @@ public class WorkspaceFileService {
                 Set<String> paths=redis.opsForSet().members(pathsKey(p.getId()));
                 sync(p,"","");
                 if(paths!=null) for(String path:paths) {
-                    if(!visiblePath(path)) redis.opsForSet().remove(pathsKey(p.getId()),path);
-                    else if(!path.isEmpty()) sync(p,path,"");
+                    validatePath(path);
+                    if(!path.isEmpty()) sync(p,path,"");
                 }
             } catch(Exception e) {dirtyProjects.remove(entry.getKey(),entry.getValue());log("目录刷新失败",e);}
         }
@@ -717,10 +715,9 @@ public class WorkspaceFileService {
     private static String digest(byte[] bytes) {
         try {return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));} catch(java.security.NoSuchAlgorithmException e) {throw new IllegalStateException(e);}
     }
-    private static void protectedPath(String path,boolean rootAllowed) {
+    private static void validateOperationPath(String path,boolean rootAllowed) {
         validatePath(path);
         if(!rootAllowed && path.isEmpty()) throw invalid("不能操作工作区根目录");
-        if(!visiblePath(path)) throw invalid("内部文件和目录不可操作");
     }
     private static void revision(String value) {if(value==null || value.isBlank() || value.length()>1024) throw invalid("文件版本缺失或无效，请刷新目录");}
     private static void requireUuid(String value) {try {if(value==null || !UUID.fromString(value).toString().equalsIgnoreCase(value)) throw new IllegalArgumentException();} catch(Exception e) {throw invalid("请求或计划标识无效");}}
@@ -728,7 +725,7 @@ public class WorkspaceFileService {
     private static long positiveId(String text) {long n=nonnegativeId(text);if(n==0) throw invalid("分页游标无效");return n;}
     private static void pageLimit(int limit) {if(limit<1 || limit>200) throw invalid("分页大小无效");}
     private static String parent(String path) {int slash=path.lastIndexOf('/');return slash<0 ? "" : path.substring(0,slash);}
-    private static String join(String parent,String name) {String path=parent.isEmpty() ? name : parent+"/"+name;protectedPath(path,false);return path;}
+    private static String join(String parent,String name) {String path=parent.isEmpty() ? name : parent+"/"+name;validateOperationPath(path,false);return path;}
     private static boolean descendant(String path,String source) {return path.equals(source) || path.startsWith(source+"/");}
     private static String shortNullable(String value) {return value==null ? null : shortError(value);}
     private void remember(Long pid,String path) {
@@ -741,19 +738,9 @@ public class WorkspaceFileService {
         if(value==null) return null;
         try {
             var cached=json.readValue(value.toString(),WorkspaceDirectoryVO.class);
-            return new WorkspaceDirectoryVO(cached.path(),cached.generation(),cached.scannedAt(),visibleEntries(cached.entries()),
+            return new WorkspaceDirectoryVO(cached.path(),cached.generation(),cached.scannedAt(),cached.entries(),
                     cached.nextCursor(),cached.loaded(),cached.online(),cached.supported(),cached.operation(),cached.maxFileBytes());
         } catch(IOException e) {return null;}
-    }
-    private static List<WorkspaceFileEntryVO> visibleEntries(List<WorkspaceFileEntryVO> entries) {
-        return entries.stream().filter(entry -> visiblePath(entry.path())).toList();
-    }
-    private static boolean visiblePath(String path) {
-        for (String part : path.split("/")) {
-            String name = part.toLowerCase(Locale.ROOT);
-            if (HIDDEN_NAMES.contains(name) || name.startsWith(".harness-upload-")) return false;
-        }
-        return true;
     }
     private void validateEntries(WorkspaceFileOperationPO op,WorkspaceFileResultDTO r) {
         if(r.entries()==null || r.entries().size()>200) throw invalid("目录结果超限");
@@ -774,7 +761,7 @@ public class WorkspaceFileService {
     }
     public static void validateReferencePath(String path) {
         validatePath(path);
-        if(path.isEmpty() || !visiblePath(path))throw invalid("文件引用需为可见的工作区相对文件路径");
+        if(path.isEmpty())throw invalid("文件引用需为非空的工作区相对文件路径");
     }
     private static void validateCursor(String cursor) {validatePath(cursor);if(cursor.contains("/")) throw invalid("目录游标无效");}
     private Path storage(String key) throws IOException {
@@ -799,7 +786,8 @@ public class WorkspaceFileService {
             return new Content(total,HexFormat.of().formatHex(digest.digest()));
         } finally {Files.deleteIfExists(temporary);}
     }
-    private static String cacheKey(Long pid) {return "harness:workspace-files:"+pid+":pages";}
+    // Earlier pages omitted project dotfiles; a new namespace forces a complete rescan.
+    private static String cacheKey(Long pid) {return "harness:workspace-files:"+pid+":pages-v2";}
     private static String pathsKey(Long pid) {return "harness:workspace-files:"+pid+":paths";}
     private static String field(String path,String cursor) {return path+"\n"+cursor;}
     private static Long parseId(String value) {try{return Long.valueOf(value);}catch(Exception e){throw invalid("操作标识无效");}}

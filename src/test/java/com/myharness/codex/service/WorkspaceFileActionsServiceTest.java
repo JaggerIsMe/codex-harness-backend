@@ -147,16 +147,20 @@ class WorkspaceFileActionsServiceTest {
         verify(gateway).send(eq("device"),argThat(c -> "RECONCILE_WORKSPACE_OPERATION".equals(c.getType())));
     }
 
-    @Test void rejectsCrossProjectBusyTurnsProtectedPathsAndOldCapabilities() {
+    @Test void rejectsCrossProjectBusyTurnsInvalidPathsAndOldCapabilities() {
         assertThrows(BusinessException.class,() -> files.rename(2L,99L,rename("a","b")));
         when(experts.activeTurns(2L)).thenReturn(1);
         assertThrows(BusinessException.class,() -> files.rename(2L,1L,rename("a","b")));assertTrue(rows.isEmpty());
         when(experts.activeTurns(2L)).thenReturn(0);device.setWorkspaceFileMutations(false);
         assertThrows(BusinessException.class,() -> files.rename(2L,1L,rename("a","b")));
         device.setWorkspaceFileMutations(true);
-        for(String path:List.of(".AGENT/a","a/.git",".harness-upload-part","../a",""))
+        for(String path:List.of("../a",""))
             assertThrows(BusinessException.class,() -> files.rename(2L,1L,rename(path,"b")));
-        assertThrows(BusinessException.class,() -> files.rename(2L,1L,rename("a",".CODEX")));
+        for(String path:List.of(".AGENT/a","a/.git",".harness-upload-part")) {
+            assertDoesNotThrow(() -> files.rename(2L,1L,rename(path,"b")));
+            rows.values().forEach(row->row.setStatus("SUCCEEDED"));
+        }
+        assertDoesNotThrow(() -> files.rename(2L,1L,rename("a",".CODEX")));
         assertThrows(BusinessException.class,() -> files.move(2L,1L,new WorkspaceFileActionRequestDTO(key(),"a",null,"","revision",null,null,null)));
     }
 
